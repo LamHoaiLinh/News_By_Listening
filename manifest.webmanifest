@@ -1,0 +1,13 @@
+{
+  "name": "News By Listening",
+  "short_name": "News Listening",
+  "description": "Quản lý kênh và playlist YouTube để nghe nhanh bằng Brave trên iPhone.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#0a0b0e",
+  "theme_color": "#0a0b0e",
+  "icons": [
+    {"src":"./icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}

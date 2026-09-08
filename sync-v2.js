@@ -2,7 +2,7 @@
 // Giu nguyen STORAGE_KEY cu nen du lieu hien tai tren PC khong bi mat khi cap nhat.
 
 const NBL_SYNC_ENDPOINT = 'https://qjpcxhackvoewcxlatis.supabase.co/functions/v1/nbl-sync';
-const NBL_SYNC_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJIUzI1NiIsInJlZiI6InFqcGN4aGFja3ZvZXdjeGxhdGlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwMzYxNDEsImV4cCI6MjEwMjYxMjE0MX0.7PLermMf8kDjVBrBQ5ydnxLsIdA1REF0ronjcu9DLQo';
+const NBL_SYNC_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFqcGN4aGFja3ZvZXdjeGxhdGlzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODcwMzYxNDEsImV4cCI6MjEwMjYxMjE0MX0.7PLermMf8kDjVBrBQ5ydnxLsIdA1REF0ronjcu9DLQo';
 let sync6Ui = { code: '', expiresAt: '', busy: false, message: '' };
 
 function normalizeSync6(value) {
@@ -65,9 +65,9 @@ function renderSync() {
 
 async function createSync6Code() {
   if (sync6Ui.busy) return;
+  const includeKey = !!document.getElementById('sync6-include-key')?.checked;
   sync6Ui.busy = true; sync6Ui.message = ''; render();
   try {
-    const includeKey = !!document.getElementById('sync6-include-key')?.checked;
     const payload = syncPayload(includeKey);
     const result = await sync6Request('create', { payload });
     sync6Ui.code = normalizeSync6(result.code);
@@ -138,6 +138,5 @@ async function checkSync6Hash() {
   if (confirm(`Nhận cấu hình News By Listening bằng mã ${code}?`)) await fetchSync6Code(code);
 }
 
-// Nếu người dùng đang đứng ở tab Đồng bộ khi file mới tải xong, vẽ lại giao diện mới.
 if (typeof view !== 'undefined' && view.tab === 'sync') render();
 setTimeout(checkSync6Hash, 120);

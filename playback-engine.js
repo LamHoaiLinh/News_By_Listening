@@ -1,0 +1,253 @@
+// News By Listening v1.7.0 - single playback engine
+// Owns external launch, YouTube queue creation, shuffle and repeat behavior.
+(function(){
+  'use strict';
+
+  const QUEUE_LIMIT=50;
+  const MODES=new Set(['off','list-once','list-infinity','track-once','track-infinity']);
+
+  function normalizeMode(mode){return MODES.has(mode)?mode:'off';}
+  function queueById(id){return (state.customPlaylists||[]).find(x=>x.id===id)||null;}
+  function currentQueue(){return queueById(view.queueId);}
+  function selectedTrack(queue){return (queue?.videos||[]).find(v=>v.videoId===queue.repeatVideoId)||null;}
+
+  function modeLabel(queue){
+    const mode=normalizeMode(queue?.repeatMode);
+    if(mode==='list-once')return 'Toàn bộ ×1';
+    if(mode==='list-infinity')return 'Toàn bộ ∞';
+    if(mode==='track-once')return '1 bài ×1';
+    if(mode==='track-infinity')return '1 bài ∞';
+    return 'Tắt';
+  }
+
+  function isIOSDevice(){
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+      (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+  }
+
+  function toVivaldiScheme(target){
+    try{
+      const u=new URL(String(target),location.href);
+      if(u.protocol==='http:'||u.protocol==='https:')return 'vivaldi://'+u.href.replace(/^https?:\/\//i,'');
+    }catch{}
+    return 'vivaldi://'+String(target).replace(/^https?:\/\//i,'');
+  }
+
+  function openExternal(url){
+    if(!url)return false;
+    const target=String(url);
+
+    if(isIOSDevice()){
+      let handedOff=false;
+      let timer=null;
+      const cleanup=()=>{
+        document.removeEventListener('visibilitychange',onVisibility);
+        window.removeEventListener('pagehide',markHandoff);
+        window.removeEventListener('blur',markHandoff);
+        if(timer){clearTimeout(timer);timer=null;}
+      };
+      const markHandoff=()=>{handedOff=true;cleanup();};
+      const onVisibility=()=>{if(document.visibilityState==='hidden')markHandoff();};
+
+      document.addEventListener('visibilitychange',onVisibility);
+      window.addEventListener('pagehide',markHandoff,{once:true});
+      window.addEventListener('blur',markHandoff,{once:true});
+
+      window.location.href=toVivaldiScheme(target);
+      timer=setTimeout(()=>{
+        const fallback=!handedOff&&document.visibilityState==='visible';
+        cleanup();
+        if(!fallback)return;
+        const a=document.createElement('a');
+        a.href=target;
+        a.target='_blank';
+        a.rel='noopener noreferrer';
+        a.style.display='none';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      },1800);
+      return true;
+    }
+
+    window.open(target,'_blank','noopener');
+    return true;
+  }
+
+  function buildWatchUrl(item,video){
+    if(!video?.videoId)return item?.url||'';
+    const v=encodeURIComponent(video.videoId);
+    if(item?.kind==='playlist'&&item.playlistId){
+      return `https://www.youtube.com/watch?v=${v}&list=${encodeURIComponent(item.playlistId)}&autoplay=1`;
+    }
+    if(item?.kind==='channel'&&item.uploadsPlaylistId){
+      return `https://www.youtube.com/watch?v=${v}&list=${encodeURIComponent(item.uploadsPlaylistId)}&autoplay=1`;
+    }
+    return `https://www.youtube.com/watch?v=${v}&autoplay=1`;
+  }
+
+  function randomInt(max){
+    if(max<=1)return 0;
+    try{const b=new Uint32Array(1);crypto.getRandomValues(b);return b[0]%max;}
+    catch{return Math.floor(Math.random()*max);}
+  }
+
+  function shuffledCopy(videos){
+    const arr=[...(videos||[])];
+    for(let i=arr.length-1;i>0;i--){
+      const j=randomInt(i+1);
+      [arr[i],arr[j]]=[arr[j],arr[i]];
+    }
+    return arr;
+  }
+
+  function cycle(videos,shuffle){return shuffle?shuffledCopy(videos):[...(videos||[])];}
+
+  function buildSequence(queue,{start=0,shuffle=false,honorRepeat=true}={}){
+    if(!queue)return [];
+    const source=(queue.videos||[]).slice(Math.max(0,Number(start)||0));
+    if(!source.length)return [];
+
+    const mode=honorRepeat?normalizeMode(queue.repeatMode):'off';
+    if(mode==='track-once'||mode==='track-infinity'){
+      const track=selectedTrack(queue);
+      if(!track)return [];
+      return mode==='track-once'?[track,track]:Array.from({length:QUEUE_LIMIT},()=>track);
+    }
+
+    if(mode==='list-once'){
+      return [...cycle(source,shuffle),...cycle(source,shuffle)].slice(0,QUEUE_LIMIT);
+    }
+
+    if(mode==='list-infinity'){
+      const out=[];
+      while(out.length<QUEUE_LIMIT){
+        const pass=cycle(source,shuffle);
+        if(!pass.length)break;
+        out.push(...pass);
+      }
+      return out.slice(0,QUEUE_LIMIT);
+    }
+
+    return cycle(source,shuffle).slice(0,QUEUE_LIMIT);
+  }
+
+  function queueUrl(sequence){
+    const ids=(sequence||[]).map(x=>x?.videoId).filter(Boolean).slice(0,QUEUE_LIMIT);
+    return ids.length?`https://www.youtube.com/watch_videos?video_ids=${ids.map(encodeURIComponent).join(',')}`:'';
+  }
+
+  function recordQueueHistory(queue,sequence,url){
+    const first=sequence?.[0];
+    if(!first||typeof recordHistory!=='function')return;
+    recordHistory({
+      videoId:first.videoId,
+      title:first.title,
+      channelTitle:first.channelTitle,
+      thumbnail:first.thumbnail
+    },{title:queue?.name||'Danh sách phát'},url);
+  }
+
+  function playQueue(queue,{start=0,shuffle=false,honorRepeat=true,quiet=false}={}){
+    if(!queue)return false;
+    const mode=honorRepeat?normalizeMode(queue.repeatMode):'off';
+    if((mode==='track-once'||mode==='track-infinity')&&!selectedTrack(queue)){
+      toast('Hãy chọn một bài trong danh sách để lặp');
+      return false;
+    }
+
+    const sequence=buildSequence(queue,{start,shuffle,honorRepeat});
+    if(!sequence.length){toast('Danh sách chưa có video');return false;}
+    const url=queueUrl(sequence);
+    if(!url){toast('Không tạo được hàng đợi');return false;}
+
+    recordQueueHistory(queue,sequence,url);
+    if(!quiet){
+      const repeatSuffix=mode==='off'?'':` · Lặp ${modeLabel(queue)}`;
+      const fromSuffix=start>0?` · từ #${Number(start)+1}`:'';
+      toast(`${shuffle?'Đã trộn':'Đã tạo'} ${sequence.length} mục${fromSuffix}${repeatSuffix}`);
+    }
+    return openExternal(url);
+  }
+
+  function playFromIndex(queue,index){
+    return playQueue(queue,{start:Number(index)||0,shuffle:false,honorRepeat:false});
+  }
+
+  function playRandom(queue){
+    return playQueue(queue,{start:0,shuffle:true,honorRepeat:true});
+  }
+
+  function handleQueuePlaybackClick(e){
+    const cardShuffle=e.target.closest('[data-nbl-shuffle-card]');
+    if(cardShuffle){
+      const q=queueById(cardShuffle.dataset.nblShuffleCard);
+      if(!q)return;
+      e.preventDefault();e.stopImmediatePropagation();
+      playRandom(q);return;
+    }
+
+    const currentShuffle=e.target.closest('[data-nbl-shuffle-current]');
+    if(currentShuffle){
+      const q=currentQueue();
+      if(!q)return;
+      e.preventDefault();e.stopImmediatePropagation();
+      playRandom(q);return;
+    }
+
+    const cardPlay=e.target.closest('[data-q-play]');
+    if(cardPlay){
+      const q=queueById(cardPlay.dataset.qPlay);
+      if(!q)return;
+      e.preventDefault();e.stopImmediatePropagation();
+      playQueue(q);return;
+    }
+
+    const detailPlay=e.target.closest('[data-q-action="play-all"]');
+    if(detailPlay){
+      const q=currentQueue();
+      if(!q)return;
+      e.preventDefault();e.stopImmediatePropagation();
+      playQueue(q);return;
+    }
+
+    const fromHere=e.target.closest('[data-q-play-index]');
+    if(fromHere){
+      const q=currentQueue();
+      if(!q)return;
+      e.preventDefault();e.stopImmediatePropagation();
+      playFromIndex(q,Number(fromHere.dataset.qPlayIndex));return;
+    }
+
+    const test=e.target.closest('[data-q-action="test-vivaldi"]');
+    if(test){
+      e.preventDefault();e.stopImmediatePropagation();
+      openExternal('https://m.youtube.com/');
+    }
+  }
+
+  const api={
+    version:'1.7.0',
+    QUEUE_LIMIT,
+    normalizeMode,
+    queueById,
+    currentQueue,
+    selectedTrack,
+    modeLabel,
+    buildWatchUrl,
+    buildSequence,
+    queueUrl,
+    openExternal,
+    playQueue,
+    playFromIndex,
+    playRandom
+  };
+
+  // Compatibility aliases: old UI modules can call the new engine without owning playback logic.
+  window.NBL_PLAYBACK_ENGINE=api;
+  window.NBL_REPEAT_ENGINE=api;
+  openExternal=api.openExternal;
+  watchUrl=api.buildWatchUrl;
+
+  document.addEventListener('click',handleQueuePlaybackClick,true);
+})();

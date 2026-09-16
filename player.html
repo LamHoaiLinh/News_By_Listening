@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0a0b0e" />
+  <title>News Listening Player</title>
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./player.css" />
+</head>
+<body>
+  <main class="player-shell">
+    <header class="player-head">
+      <div class="player-brand"><div class="player-logo">NBL</div><div><h1>News Listening Player</h1><p>Tab phát cố định trong Vivaldi · đừng đóng tab này</p></div></div>
+      <span id="relay-status" class="status">Đang kết nối…</span>
+    </header>
+
+    <section class="video-stage">
+      <div id="yt-player"></div>
+      <button id="resume-btn" class="resume" hidden>▶ Chạm để tiếp tục phát</button>
+    </section>
+
+    <section class="now-card">
+      <div class="eyebrow">ĐANG PHÁT</div>
+      <h2 id="now-title">Đang chờ lệnh từ News By Listening…</h2>
+      <div id="now-meta" class="meta">Giữ tab này mở. Lần sau app sẽ tái sử dụng chính tab này.</div>
+      <div class="queue-line"><b id="queue-count">0</b> mục trong queue</div>
+    </section>
+
+    <section class="help-card">
+      <b>Cách dùng:</b> quay lại app <b>News Listening</b>, chọn video hoặc danh sách rồi bấm Phát. App sẽ gửi queue mới vào tab này thay vì tạo thêm tab YouTube.
+    </section>
+  </main>
+
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="./player.js"></script>
+</body>
+</html>

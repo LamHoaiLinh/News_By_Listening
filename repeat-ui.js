@@ -1,4 +1,4 @@
-// News By Listening v1.5.0 - repeat controls UI
+// News By Listening v1.7.0 - repeat controls UI only
 (function(){
   if(!window.NBL_REPEAT_ENGINE)return;
   const E=window.NBL_REPEAT_ENGINE;
@@ -90,9 +90,6 @@
     render=function(...args){
       const out=base(...args);
       enhance();
-      if(view.tab==='settings'){
-        document.querySelectorAll('.subtle').forEach(el=>{if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.5.0 · Lặp lại + ngẫu nhiên + 6 slot';});
-      }
       return out;
     };
   }

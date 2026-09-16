@@ -1,5 +1,7 @@
-// News By Listening v1.6.2 - refresh all YouTube sources and saved queue metadata
+// News By Listening v1.7.0 - global refresh action without DOM-structure assumptions
 (function(){
+  'use strict';
+
   let busy=false;
   let done=0;
   let total=0;
@@ -11,45 +13,21 @@
     return `↻ ${done}/${Math.max(total,1)}${label?` · ${label}`:''}`;
   }
 
-  function updateButton(){
-    const btn=document.querySelector('[data-action="bulk-refresh-links"]');
-    if(!btn)return;
-    btn.disabled=busy;
-    btn.textContent=progressText();
-    btn.title=busy?'Đang cập nhật toàn bộ nguồn YouTube và danh sách phát':'Cập nhật toàn bộ kênh, playlist và thông tin video trong DS phát';
+  if(typeof shell==='function'){
+    const baseShell=shell;
+    shell=function(content){
+      const html=baseShell(content);
+      const button=`<button class="ghost nbl-bulk-refresh-btn" data-action="bulk-refresh-links" ${busy?'disabled':''} style="padding:8px 10px;font-size:12px;white-space:nowrap">${esc(progressText())}</button>`;
+      return html.replace('</header>',`${button}</header>`);
+    };
   }
 
-  function enhanceTopbar(){
-    const topbar=document.querySelector('.topbar');
-    if(!topbar||topbar.querySelector('[data-action="bulk-refresh-links"]'))return;
-
-    const btn=document.createElement('button');
-    btn.className='ghost';
-    btn.dataset.action='bulk-refresh-links';
-    btn.style.padding='8px 10px';
-    btn.style.fontSize='12px';
-    btn.style.whiteSpace='nowrap';
-    btn.textContent=progressText();
-
-    const badge=topbar.querySelector('.badge');
-    if(badge){
-      let actions=topbar.querySelector('.nbl-top-actions');
-      if(!actions){
-        actions=document.createElement('div');
-        actions.className='nbl-top-actions';
-        actions.style.display='flex';
-        actions.style.alignItems='center';
-        actions.style.justifyContent='flex-end';
-        actions.style.gap='7px';
-        actions.style.flexWrap='wrap';
-        topbar.insertBefore(actions,badge);
-        actions.appendChild(badge);
-      }
-      actions.insertBefore(btn,actions.firstChild);
-    }else{
-      topbar.appendChild(btn);
-    }
-    updateButton();
+  function updateButton(){
+    document.querySelectorAll('[data-action="bulk-refresh-links"]').forEach(btn=>{
+      btn.disabled=busy;
+      btn.textContent=progressText();
+      btn.title=busy?'Đang cập nhật toàn bộ nguồn YouTube và DS phát':'Cập nhật toàn bộ kênh, playlist và metadata video trong DS phát';
+    });
   }
 
   function uniqueQueueVideoIds(){
@@ -62,10 +40,6 @@
       }
     }
     return ids;
-  }
-
-  function isoDurationText(iso){
-    return String(iso||'');
   }
 
   async function refreshLibraryItem(item){
@@ -87,8 +61,8 @@
       const x=p.items?.[0];
       if(!x)throw new Error('Video không còn công khai hoặc không tồn tại');
       item.videoId=videoId;
+      item.title=x.snippet?.title||item.title;
       item.thumbnail=x.snippet?.thumbnails?.medium?.url||x.snippet?.thumbnails?.default?.url||ytThumb(videoId);
-      if(!item.title||/^Video YouTube$/i.test(item.title))item.title=x.snippet?.title||item.title;
       item.lastFetchedAt=new Date().toISOString();
     }
   }
@@ -106,12 +80,10 @@
             title:x.snippet?.title||'',
             channelTitle:x.snippet?.channelTitle||'',
             thumbnail:x.snippet?.thumbnails?.medium?.url||x.snippet?.thumbnails?.default?.url||ytThumb(x.id),
-            duration:isoDurationText(x.contentDetails?.duration||'')
+            duration:x.contentDetails?.duration||''
           });
         }
-      }catch(e){
-        errors.push(`DS phát ${i+1}-${Math.min(i+50,ids.length)}: ${e?.message||e}`);
-      }
+      }catch(e){errors.push(`DS phát ${i+1}-${Math.min(i+50,ids.length)}: ${e?.message||e}`);}
       done++;
       updateButton();
     }
@@ -136,13 +108,10 @@
     if(busy)return;
     if(!navigator.onLine)return toast('Thiết bị đang offline');
 
-    busy=true;
-    done=0;
-    errors.length=0;
+    busy=true;done=0;errors.length=0;label='Bắt đầu';
     const items=[...(state.items||[])];
     const queueIds=uniqueQueueVideoIds();
     total=items.length+Math.ceil(queueIds.length/50);
-    label='Bắt đầu';
     updateButton();
 
     let refreshedItems=0;
@@ -152,22 +121,16 @@
         const item=items[i];
         label=`${i+1}/${items.length} ${item.title||'Nguồn YouTube'}`;
         updateButton();
-        try{
-          await refreshLibraryItem(item);
-          refreshedItems++;
-        }catch(e){
-          errors.push(`${item.title||item.url||'Nguồn YouTube'}: ${e?.message||e}`);
-        }
+        try{await refreshLibraryItem(item);refreshedItems++;}
+        catch(e){errors.push(`${item.title||item.url||'Nguồn YouTube'}: ${e?.message||e}`);}
         done++;
         updateButton();
       }
-
       if(queueIds.length)refreshedQueueVideos=await refreshQueueMetadata(queueIds);
       state.lastBulkRefreshAt=new Date().toISOString();
       save();
     }finally{
-      busy=false;
-      label='';
+      busy=false;label='';
       window.NBL_BULK_REFRESH_LAST_ERRORS=[...errors];
       render();
       updateButton();
@@ -181,35 +144,10 @@
     }
   }
 
-  if(typeof render==='function'){
-    const baseRender=render;
-    render=function(...args){
-      const out=baseRender(...args);
-      enhanceTopbar();
-      if(view.tab==='settings'){
-        document.querySelectorAll('.subtle').forEach(el=>{
-          if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.6.2 · Cập Nhật Link toàn bộ';
-        });
-        if(!document.querySelector('.nbl-autoplay-limit-note')){
-          const card=document.querySelector('.card.form');
-          if(card){
-            const note=document.createElement('div');
-            note.className='notice warn nbl-autoplay-limit-note';
-            note.innerHTML='<b>Lưu ý khi nghe lâu:</b> YouTube có thể tự dừng Autoplay sau một thời gian không tương tác. News By Listening chỉ tạo hàng đợi và bàn giao sang Vivaldi; iOS có thể treo hoặc đóng PWA ở nền mà không ảnh hưởng dữ liệu đã lưu.';
-            card.appendChild(note);
-          }
-        }
-      }
-      updateButton();
-      return out;
-    };
-  }
-
   document.addEventListener('click',e=>{
     const btn=e.target.closest('[data-action="bulk-refresh-links"]');
     if(!btn)return;
-    e.preventDefault();
-    e.stopImmediatePropagation();
+    e.preventDefault();e.stopImmediatePropagation();
     refreshAllLinks();
   },true);
 

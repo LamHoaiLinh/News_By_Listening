@@ -1,4 +1,4 @@
-// News By Listening v1.6.0 - silent new-video scanner for YouTube channels
+// News By Listening v1.7.0 - silent new-video scanner for YouTube channels
 (function(){
   const SCAN_INTERVAL_MS=2*60*60*1000;
   const CHECK_TICK_MS=5*60*1000;
@@ -28,15 +28,14 @@
     const previous=info.knownIds.length?info.knownIds:oldIds;
     const hadBaseline=info.knownIds.length>0||oldIds.length>0;
 
-    await loadChannelVideos(item); // replaces item.videos with exactly the latest 30
+    await loadChannelVideos(item);
     const current=idsOf(item.videos);
     const currentSet=new Set(current);
     const fresh=hadBaseline?current.filter(id=>!previous.includes(id)):[];
     const pending=new Set((info.newIds||[]).filter(id=>currentSet.has(id)));
     fresh.forEach(id=>pending.add(id));
 
-    // If the channel is currently open, consider the refreshed list seen immediately.
-    if(view.itemId===item.id) pending.clear();
+    if(view.itemId===item.id)pending.clear();
 
     info.knownIds=current.slice(0,30);
     info.newIds=current.filter(id=>pending.has(id)).slice(0,30);
@@ -79,7 +78,6 @@
     return `Tự quét khoảng 2 giờ/lần · quét ${h} giờ trước`;
   }
 
-  // Replace category rendering only to add per-channel in-app new-video counters.
   renderCategory=function(){
     const c=state.categories.find(x=>x.id===view.categoryId);
     if(!c){view.categoryId=null;return renderLibrary();}
@@ -87,7 +85,6 @@
     return shell(`<button class="ghost back" data-action="back-library">← Phân loại</button><div class="section-title"><div><h2>${esc(c.name)}</h2><div class="subtle">Cấp 2 · Kênh YouTube hoặc playlist</div><div class="nbl-scan-status">${esc(scannerStatusText())} · chỉ báo trong app, không push notification</div></div><button class="primary" data-action="add-item">+ Dán link</button></div><div class="entry-list">${items.map(item=>{const n=item.kind==='channel'?pendingCount(item):0;return `<div class="card entry"><img class="thumb" src="${esc(item.thumbnail||'./icon.svg')}" alt=""><div>${n?`<div class="nbl-new-video-badge">${n} VIDEO MỚI</div>`:''}<h3>${esc(item.title)}</h3><div class="meta">${item.kind==='channel'?'Kênh YouTube':item.kind==='playlist'?'Playlist':'Video'}${item.kind==='playlist'&&item.totalVideos!=null?' · '+item.totalVideos+' video':''}</div></div><div class="row-actions"><button class="ghost" data-open-item="${item.id}">Mở</button><button class="iconbtn" data-edit-item="${item.id}">Sửa</button></div></div>`}).join('')}</div>${items.length?'':'<div class="empty">Dán link kênh hoặc playlist YouTube để bắt đầu.</div>'}`);
   };
 
-  // Clear the badge as soon as the user opens that channel.
   document.addEventListener('click',e=>{
     const btn=e.target.closest('[data-open-item]');
     if(!btn)return;
@@ -95,23 +92,8 @@
     markChannelSeen(item);
   },true);
 
-  // Update version text without disturbing the existing settings renderer stack.
-  if(typeof render==='function'){
-    const baseRender=render;
-    render=function(...args){
-      const out=baseRender(...args);
-      if(view.tab==='settings'){
-        document.querySelectorAll('.subtle').forEach(el=>{
-          if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.6.0 · Tự quét video mới 2 giờ/lần';
-        });
-      }
-      return out;
-    };
-  }
-
   window.NBL_AUTO_SCANNER={scanNow:()=>scanAll({force:true}),scanIfDue:()=>scanAll({force:false}),pendingCount};
 
-  // First catch-up scan after startup, then periodic checks while the app is alive.
   setTimeout(()=>scanAll({force:false}),1800);
   setInterval(()=>scanAll({force:false}),CHECK_TICK_MS);
   document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')scanAll({force:false});});

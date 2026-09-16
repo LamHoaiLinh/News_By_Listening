@@ -1,4 +1,4 @@
-// News By Listening v1.8.0 - playback diagnostics UI
+// News By Listening v1.8.2 - playback diagnostics UI
 (function(){
   'use strict';
   const E=window.NBL_PLAYBACK_ENGINE;
@@ -67,7 +67,7 @@
     if(panel){panel.outerHTML=html;}
     else shell.insertAdjacentHTML('beforeend',html);
     document.querySelectorAll('#app .subtle').forEach(el=>{
-      if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.8.0 · Playback Diagnostics';
+      if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.8.2 · iPhone Safe Header + Playback Diagnostics';
     });
   }
   async function copyLogs(){

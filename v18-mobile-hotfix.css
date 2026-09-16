@@ -1,14 +1,59 @@
-/* News By Listening v1.8.1 - iPhone safe-area + accessible bulk refresh */
+/* News By Listening v1.8.2 - hard iPhone top safe zone + accessible header controls */
 .nbl-bulk-refresh-btn{min-height:42px;padding:10px 14px!important;font-size:13px!important;white-space:nowrap;font-weight:800}
+
 @media(max-width:700px){
-  .shell{padding-top:max(18px,calc(env(safe-area-inset-top) + 10px))}
-  .topbar{flex-wrap:wrap;align-items:flex-start;gap:10px 12px}
-  .topbar>.brand{min-width:0;flex:1 1 180px}
-  .topbar>.nbl-header-actions{flex:0 1 auto;max-width:100%}
-  .topbar>.nbl-bulk-refresh-btn{order:10;flex:1 0 100%;width:100%;min-height:50px;padding:13px 16px!important;font-size:15px!important;border-radius:15px;margin-top:2px;justify-content:center;text-align:center}
+  /* Do not trust iOS safe-area alone: reserve a hard minimum so Dynamic Island/status icons never cover controls. */
+  .shell{
+    padding-top:max(72px,calc(env(safe-area-inset-top, 0px) + 24px))!important;
+    padding-left:max(12px,env(safe-area-inset-left, 0px))!important;
+    padding-right:max(12px,env(safe-area-inset-right, 0px))!important;
+  }
+
+  /* Mobile header becomes three safe rows: brand -> slot/speed -> refresh. */
+  .topbar{
+    display:grid!important;
+    grid-template-columns:minmax(0,1fr)!important;
+    align-items:start!important;
+    gap:10px!important;
+    margin-bottom:22px!important;
+  }
+  .topbar>.brand{
+    width:100%!important;
+    min-width:0!important;
+    grid-column:1!important;
+  }
+  .topbar>.nbl-header-actions{
+    width:100%!important;
+    max-width:none!important;
+    grid-column:1!important;
+    justify-content:flex-start!important;
+    flex-wrap:wrap!important;
+    gap:8px!important;
+  }
+  .topbar>.nbl-bulk-refresh-btn{
+    width:100%!important;
+    max-width:none!important;
+    grid-column:1!important;
+    min-height:52px!important;
+    padding:14px 16px!important;
+    font-size:16px!important;
+    border-radius:15px!important;
+    margin:0!important;
+    text-align:center!important;
+  }
+
+  .nbl-slot-chip{
+    min-height:44px!important;
+    padding:9px 12px!important;
+  }
+  .topbar .badge{
+    min-height:40px;
+    padding:8px 12px;
+  }
 }
+
 @media(max-width:430px){
   .brand h1{font-size:18px;line-height:1.15}
-  .nbl-slot-chip{max-width:145px}
-  .nbl-slot-name{max-width:78px}
+  .nbl-slot-chip{max-width:190px!important}
+  .nbl-slot-name{max-width:118px!important}
 }

@@ -1,10 +1,14 @@
-// News By Listening v1.7.0 - single playback engine
-// Owns external launch, YouTube queue creation, shuffle and repeat behavior.
+// News By Listening v1.8.0 - single playback engine + diagnostics
+// Owns external launch, YouTube queue creation, shuffle, repeat and playback diagnostics.
 (function(){
   'use strict';
 
   const QUEUE_LIMIT=50;
+  const DIAGNOSTIC_LIMIT=20;
   const MODES=new Set(['off','list-once','list-infinity','track-once','track-infinity']);
+
+  state.playbackDiagnostics=Array.isArray(state.playbackDiagnostics)?state.playbackDiagnostics.slice(0,DIAGNOSTIC_LIMIT):[];
+  save();
 
   function normalizeMode(mode){return MODES.has(mode)?mode:'off';}
   function queueById(id){return (state.customPlaylists||[]).find(x=>x.id===id)||null;}
@@ -25,6 +29,62 @@
       (navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   }
 
+  function connectionSnapshot(){
+    const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
+    return {
+      online:navigator.onLine,
+      effectiveType:c?.effectiveType||'',
+      downlink:typeof c?.downlink==='number'?c.downlink:null,
+      saveData:!!c?.saveData,
+      visibility:document.visibilityState||'',
+      platform:isIOSDevice()?'iOS':'Other'
+    };
+  }
+
+  function diagnostics(){
+    state.playbackDiagnostics=Array.isArray(state.playbackDiagnostics)?state.playbackDiagnostics:[];
+    return state.playbackDiagnostics;
+  }
+
+  function createDiagnostic(data={}){
+    const entry={
+      id:uid('diag'),
+      startedAt:new Date().toISOString(),
+      action:data.action||'direct-url',
+      sourceType:data.sourceType||'',
+      sourceName:data.sourceName||'',
+      startIndex:Number.isFinite(Number(data.startIndex))?Number(data.startIndex):0,
+      shuffle:!!data.shuffle,
+      repeatMode:normalizeMode(data.repeatMode),
+      queueCount:Number(data.queueCount)||0,
+      firstVideoId:data.firstVideoId||'',
+      firstTitle:data.firstTitle||'',
+      videoIds:Array.isArray(data.videoIds)?data.videoIds.slice(0,QUEUE_LIMIT):[],
+      url:data.url||'',
+      launchStatus:'created',
+      connection:connectionSnapshot()
+    };
+    state.playbackDiagnostics=[entry,...diagnostics()].slice(0,DIAGNOSTIC_LIMIT);
+    save();
+    window.dispatchEvent(new CustomEvent('nbl:playback-diagnostic',{detail:{id:entry.id}}));
+    return entry.id;
+  }
+
+  function updateDiagnostic(id,patch={}){
+    if(!id)return;
+    const entry=diagnostics().find(x=>x.id===id);
+    if(!entry)return;
+    Object.assign(entry,patch,{updatedAt:new Date().toISOString()});
+    save();
+    window.dispatchEvent(new CustomEvent('nbl:playback-diagnostic',{detail:{id}}));
+  }
+
+  function clearDiagnostics(){
+    state.playbackDiagnostics=[];
+    save();
+    window.dispatchEvent(new CustomEvent('nbl:playback-diagnostic',{detail:{cleared:true}}));
+  }
+
   function toVivaldiScheme(target){
     try{
       const u=new URL(String(target),location.href);
@@ -33,9 +93,22 @@
     return 'vivaldi://'+String(target).replace(/^https?:\/\//i,'');
   }
 
-  function openExternal(url){
+  function looksLikePlaybackUrl(target){
+    try{
+      const u=new URL(String(target),location.href);
+      const host=u.hostname.replace(/^www\./,'');
+      return ['youtube.com','m.youtube.com','music.youtube.com'].includes(host) &&
+        (u.pathname==='/watch'||u.pathname==='/watch_videos');
+    }catch{return false;}
+  }
+
+  function openExternal(url,diagnosticId=null){
     if(!url)return false;
     const target=String(url);
+    let diagId=diagnosticId;
+    if(!diagId&&looksLikePlaybackUrl(target)){
+      diagId=createDiagnostic({action:'direct-url',sourceType:'direct',url:target,queueCount:1});
+    }
 
     if(isIOSDevice()){
       let handedOff=false;
@@ -46,13 +119,19 @@
         window.removeEventListener('blur',markHandoff);
         if(timer){clearTimeout(timer);timer=null;}
       };
-      const markHandoff=()=>{handedOff=true;cleanup();};
+      const markHandoff=()=>{
+        if(handedOff)return;
+        handedOff=true;
+        updateDiagnostic(diagId,{launchStatus:'handoff-detected',handedOffAt:new Date().toISOString(),visibilityAfterLaunch:document.visibilityState||''});
+        cleanup();
+      };
       const onVisibility=()=>{if(document.visibilityState==='hidden')markHandoff();};
 
       document.addEventListener('visibilitychange',onVisibility);
       window.addEventListener('pagehide',markHandoff,{once:true});
       window.addEventListener('blur',markHandoff,{once:true});
 
+      updateDiagnostic(diagId,{launchStatus:'vivaldi-requested',requestedAt:new Date().toISOString()});
       window.location.href=toVivaldiScheme(target);
       timer=setTimeout(()=>{
         const fallback=!handedOff&&document.visibilityState==='visible';
@@ -66,11 +145,13 @@
         document.body.appendChild(a);
         a.click();
         a.remove();
+        updateDiagnostic(diagId,{launchStatus:'https-fallback',fallbackAt:new Date().toISOString()});
       },1800);
       return true;
     }
 
     window.open(target,'_blank','noopener');
+    updateDiagnostic(diagId,{launchStatus:'new-tab-opened',openedAt:new Date().toISOString()});
     return true;
   }
 
@@ -162,12 +243,27 @@
     if(!url){toast('Không tạo được hàng đợi');return false;}
 
     recordQueueHistory(queue,sequence,url);
+    const first=sequence[0];
+    const diagnosticId=createDiagnostic({
+      action:start>0?'queue-from-here':'queue-play',
+      sourceType:'custom-playlist',
+      sourceName:queue.name||'Danh sách phát',
+      startIndex:Number(start)||0,
+      shuffle,
+      repeatMode:mode,
+      queueCount:sequence.length,
+      firstVideoId:first?.videoId||'',
+      firstTitle:first?.title||'',
+      videoIds:sequence.map(x=>x?.videoId).filter(Boolean),
+      url
+    });
+
     if(!quiet){
       const repeatSuffix=mode==='off'?'':` · Lặp ${modeLabel(queue)}`;
       const fromSuffix=start>0?` · từ #${Number(start)+1}`:'';
       toast(`${shuffle?'Đã trộn':'Đã tạo'} ${sequence.length} mục${fromSuffix}${repeatSuffix}`);
     }
-    return openExternal(url);
+    return openExternal(url,diagnosticId);
   }
 
   function playFromIndex(queue,index){
@@ -176,6 +272,26 @@
 
   function playRandom(queue){
     return playQueue(queue,{start:0,shuffle:true,honorRepeat:true});
+  }
+
+  function playLibraryVideo(item,video,index){
+    if(!item||!video)return false;
+    const url=buildWatchUrl(item,video,index);
+    if(typeof recordHistory==='function')recordHistory(video,item,url);
+    const diagnosticId=createDiagnostic({
+      action:'library-video',
+      sourceType:item.kind||'library',
+      sourceName:item.title||video.channelTitle||'Thư viện',
+      startIndex:Number(index)||0,
+      shuffle:false,
+      repeatMode:'off',
+      queueCount:1,
+      firstVideoId:video.videoId||'',
+      firstTitle:video.title||'',
+      videoIds:video.videoId?[video.videoId]:[],
+      url
+    });
+    return openExternal(url,diagnosticId);
   }
 
   function handleQueuePlaybackClick(e){
@@ -227,8 +343,9 @@
   }
 
   const api={
-    version:'1.7.0',
+    version:'1.8.0',
     QUEUE_LIMIT,
+    DIAGNOSTIC_LIMIT,
     normalizeMode,
     queueById,
     currentQueue,
@@ -240,14 +357,19 @@
     openExternal,
     playQueue,
     playFromIndex,
-    playRandom
+    playRandom,
+    playLibraryVideo,
+    diagnostics,
+    createDiagnostic,
+    updateDiagnostic,
+    clearDiagnostics
   };
 
-  // Compatibility aliases: old UI modules can call the new engine without owning playback logic.
   window.NBL_PLAYBACK_ENGINE=api;
   window.NBL_REPEAT_ENGINE=api;
   openExternal=api.openExternal;
   watchUrl=api.buildWatchUrl;
+  playVideo=api.playLibraryVideo;
 
   document.addEventListener('click',handleQueuePlaybackClick,true);
 })();

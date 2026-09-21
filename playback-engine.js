@@ -1,9 +1,10 @@
-// News By Listening v1.9.0 - unified playback engine + single Vivaldi player
+// News By Listening v1.9.1 - single Vivaldi player with stale-tab recovery
 (function(){
   'use strict';
 
   const QUEUE_LIMIT=50;
   const DIAGNOSTIC_LIMIT=20;
+  const PLAYER_HEARTBEAT_MAX_AGE_MS=2*60*60*1000;
   const RELAY_URL='https://qjpcxhackvoewcxlatis.supabase.co/functions/v1/nbl-player-relay';
   const MODES=new Set(['off','list-once','list-infinity','track-once','track-infinity']);
 
@@ -67,6 +68,14 @@
     }finally{clearTimeout(timer);}
   }
 
+  function playerStatusIsFresh(status){
+    const seenAt=Date.parse(status?.playerSeenAt||'');
+    if(!Number.isFinite(seenAt))return false;
+    const previousId=state.prefs.singleVivaldiLastCommandId||'';
+    const previousWasAcked=!previousId||status?.ackId===previousId;
+    return previousWasAcked&&(Date.now()-seenAt)<=PLAYER_HEARTBEAT_MAX_AGE_MS;
+  }
+
   function looksLikePlaybackUrl(target){
     try{const u=new URL(String(target),location.href);const host=u.hostname.replace(/^www\./,'');return ['youtube.com','m.youtube.com','music.youtube.com'].includes(host)&&(u.pathname==='/watch'||u.pathname==='/watch_videos');}catch{return false;}
   }
@@ -107,18 +116,29 @@
 
     const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,createdAt:new Date().toISOString()};
     updateDiagnostic(diagnosticId,{deliveryMode:'single-vivaldi-player',playerCommandId:command.id});
+
+    let statusBefore=null;
+    try{statusBefore=await relay('status');}catch{}
+    const canReuse=playerStatusIsFresh(statusBefore);
+
     try{await relay('push',{command});}
     catch(e){updateDiagnostic(diagnosticId,{launchStatus:'single-player-relay-error',relayError:String(e?.message||e)});return directOpenExternal(fallbackUrl,diagnosticId);}
 
     state.prefs.singleVivaldiLastCommandId=command.id;
-    const firstOpen=!state.prefs.singleVivaldiPlayerInitialized;
-    if(firstOpen)state.prefs.singleVivaldiPlayerInitialized=true;
+    state.prefs.singleVivaldiPlayerInitialized=canReuse;
+    state.prefs.singleVivaldiPlayerVerifiedAt=canReuse?(statusBefore?.playerSeenAt||new Date().toISOString()):'';
     save();
 
-    if(firstOpen){
-      return launchIOS(toVivaldiScheme(playerPageUrl()),diagnosticId,{requestStatus:'single-player-first-open',handoffStatus:'single-player-handoff-detected',fallbackUrl:playerPageUrl()});
+    if(canReuse){
+      return launchIOS('vivaldi://',diagnosticId,{requestStatus:'single-player-reuse-requested',handoffStatus:'single-player-reused',fallbackUrl:playerPageUrl()});
     }
-    return launchIOS('vivaldi://',diagnosticId,{requestStatus:'single-player-reuse-requested',handoffStatus:'single-player-reused',fallbackUrl:playerPageUrl()});
+
+    updateDiagnostic(diagnosticId,{
+      playerRecoveryReason:statusBefore?.playerSeenAt?'player-stale-or-last-command-unacked':'player-not-seen',
+      previousPlayerSeenAt:statusBefore?.playerSeenAt||'',
+      previousAckId:statusBefore?.ackId||''
+    });
+    return launchIOS(toVivaldiScheme(playerPageUrl()),diagnosticId,{requestStatus:'single-player-recovery-open',handoffStatus:'single-player-recovery-handoff',fallbackUrl:playerPageUrl()});
   }
 
   function openExternal(url,diagnosticId=null){
@@ -180,10 +200,11 @@
   }
 
   function setSingleTabEnabled(value){state.prefs.singleVivaldiTab=!!value;save();return state.prefs.singleVivaldiTab;}
-  async function resetSingleTabPlayer(){state.prefs.singleVivaldiPlayerInitialized=false;state.prefs.singleVivaldiLastCommandId='';save();try{await relay('reset');}catch{}return true;}
+  async function resetSingleTabPlayer(){state.prefs.singleVivaldiPlayerInitialized=false;state.prefs.singleVivaldiLastCommandId='';state.prefs.singleVivaldiPlayerVerifiedAt='';save();try{await relay('reset');}catch{}return true;}
   function openSinglePlayer(){
     if(!isIOSDevice())return window.open(playerPageUrl(),'_blank','noopener');
-    state.prefs.singleVivaldiPlayerInitialized=true;save();return launchIOS(toVivaldiScheme(playerPageUrl()),null,{fallbackUrl:playerPageUrl()});
+    state.prefs.singleVivaldiPlayerInitialized=false;state.prefs.singleVivaldiPlayerVerifiedAt='';save();
+    return launchIOS(toVivaldiScheme(playerPageUrl()),null,{requestStatus:'single-player-manual-open',handoffStatus:'single-player-manual-handoff',fallbackUrl:playerPageUrl()});
   }
 
   function handleQueuePlaybackClick(e){
@@ -195,7 +216,7 @@
     const test=e.target.closest('[data-q-action="test-vivaldi"]');if(test){e.preventDefault();e.stopImmediatePropagation();openSinglePlayer();}
   }
 
-  const api={version:'1.9.0',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,playRandom,playLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
+  const api={version:'1.9.1',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,playRandom,playLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
   window.NBL_PLAYBACK_ENGINE=api;window.NBL_REPEAT_ENGINE=api;openExternal=api.openExternal;watchUrl=api.buildWatchUrl;playVideo=api.playLibraryVideo;
   document.addEventListener('click',handleQueuePlaybackClick,true);
 })();

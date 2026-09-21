@@ -1,4 +1,4 @@
-// News By Listening v1.9.0 - playback diagnostics + single-tab player controls
+// News By Listening v1.9.1 - playback diagnostics + stale-player recovery
 (function(){
   'use strict';
   const E=window.NBL_PLAYBACK_ENGINE;
@@ -9,6 +9,10 @@
   function repeatText(mode){if(mode==='list-once')return 'Toàn bộ ×1';if(mode==='list-infinity')return 'Toàn bộ ∞';if(mode==='track-once')return '1 bài ×1';if(mode==='track-infinity')return '1 bài ∞';return 'Tắt';}
   function actionText(x){if(x.action==='library-video')return 'Thư viện';if(x.action==='queue-from-here')return 'Nghe từ đây';if(x.action==='direct-url')return 'Mở lại / URL trực tiếp';if(x.shuffle&&x.repeatMode!=='off')return 'Ngẫu nhiên + Lặp';if(x.shuffle)return 'Ngẫu nhiên';if(x.repeatMode!=='off')return 'Phát + Lặp';return 'Phát danh sách';}
   function statusText(status){
+    if(status==='single-player-recovery-open')return 'Đang khôi phục Player';
+    if(status==='single-player-recovery-handoff')return 'Đã mở lại Player';
+    if(status==='single-player-manual-open')return 'Đang mở Player';
+    if(status==='single-player-manual-handoff')return 'Player đã mở';
     if(status==='single-player-first-open')return 'Đang mở Player lần đầu';
     if(status==='single-player-handoff-detected')return 'Player đã mở';
     if(status==='single-player-reuse-requested')return 'Đang gọi lại Player';
@@ -21,7 +25,7 @@
     if(status==='new-tab-opened')return 'Đã mở tab';
     return 'Đã tạo lệnh phát';
   }
-  function statusClass(status){return ['single-player-handoff-detected','single-player-reused','handoff-detected','new-tab-opened'].includes(status)?'green':'';}
+  function statusClass(status){return ['single-player-recovery-handoff','single-player-manual-handoff','single-player-handoff-detected','single-player-reused','handoff-detected','new-tab-opened'].includes(status)?'green':'';}
   function connectionText(c){if(!c)return '';const parts=[c.online===false?'Offline':'Online'];if(c.effectiveType)parts.push(c.effectiveType);if(c.saveData)parts.push('Save Data');if(c.platform)parts.push(c.platform);return parts.join(' · ');}
 
   function renderEntry(x,i){
@@ -40,7 +44,7 @@
   function renderSingleTabPanel(){
     const enabled=state.prefs?.singleVivaldiTab!==false;
     const initialized=!!state.prefs?.singleVivaldiPlayerInitialized;
-    return `<section class="nbl-diag-section" data-nbl-single-tab-panel><div class="section-title"><div><h2>Vivaldi Player 1 tab</h2><div class="subtle">Không tạo thêm tab YouTube sau mỗi lần bấm Phát</div></div><span class="badge ${enabled?'green':''}">${enabled?'Đang bật':'Đang tắt'}</span></div><div class="card form"><label><input type="checkbox" data-single-tab-toggle ${enabled?'checked':''}> Luôn tái sử dụng một tab Player trong Vivaldi</label><div class="notice"><b>Lần đầu:</b> app mở một tab “News Listening Player”. Hãy giữ tab đó, không đóng. Từ lần phát thứ hai, app chỉ gửi queue mới vào chính tab Player rồi gọi Vivaldi ra trước. Nếu đã có nhiều tab rác cũ, anh chỉ cần đóng chúng thủ công một lần cuối.</div><div class="toolbar"><button class="primary" data-single-tab-open>${initialized?'Mở lại Player':'Khởi tạo Player'}</button><button class="ghost" data-single-tab-reset>Khởi tạo lại Player</button></div><div class="subtle">Trạng thái slot hiện tại: ${initialized?'đã khởi tạo Player':'chưa khởi tạo Player'}.</div></div></section>`;
+    return `<section class="nbl-diag-section" data-nbl-single-tab-panel><div class="section-title"><div><h2>Vivaldi Player 1 tab</h2><div class="subtle">Không tạo thêm tab YouTube sau mỗi lần bấm Phát</div></div><span class="badge ${enabled?'green':''}">${enabled?'Đang bật':'Đang tắt'}</span></div><div class="card form"><label><input type="checkbox" data-single-tab-toggle ${enabled?'checked':''}> Luôn tái sử dụng một tab Player trong Vivaldi</label><div class="notice"><b>Tự khôi phục:</b> nếu Player cũ còn sống, app chỉ gọi lại đúng phiên Vivaldi đang dùng. Nếu Player đã bị đóng hoặc không còn phản hồi, app sẽ tự mở lại trang “News Listening Player” thay vì rơi vào Speed Dial. Sau khi Player mở lại, các lượt tiếp theo tiếp tục dùng 1 tab.</div><div class="toolbar"><button class="primary" data-single-tab-open>${initialized?'Mở lại Player':'Khởi tạo Player'}</button><button class="ghost" data-single-tab-reset>Khởi tạo lại Player</button></div><div class="subtle">Trạng thái slot hiện tại: ${initialized?'Player đã được xác nhận gần đây':'Player sẽ được kiểm tra/khôi phục khi phát'}.</div></div></section>`;
   }
 
   function renderPanel(){
@@ -55,7 +59,7 @@
     if(single)single.outerHTML=singleHtml;else shell.insertAdjacentHTML('beforeend',singleHtml);
     let panel=shell.querySelector('[data-nbl-diagnostics-panel]');const html=renderPanel();
     if(panel)panel.outerHTML=html;else shell.insertAdjacentHTML('beforeend',html);
-    document.querySelectorAll('#app .subtle').forEach(el=>{if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.9.0 · Single Vivaldi Player + Playback Diagnostics';});
+    document.querySelectorAll('#app .subtle').forEach(el=>{if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.9.1 · Auto-Recover Vivaldi Player + Playback Diagnostics';});
   }
 
   async function copyLogs(){const text=JSON.stringify(E.diagnostics(),null,2);try{await navigator.clipboard.writeText(text);toast('Đã sao chép nhật ký Playback');}catch{toast('Không thể sao chép tự động');}}

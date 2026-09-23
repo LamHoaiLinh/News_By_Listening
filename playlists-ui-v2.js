@@ -185,7 +185,7 @@
 
   function renderQueueList(){
     const qs=state.customPlaylists||[];
-    return shell(`<div class="section-title"><div><h2>Danh sách phát</h2><div class="subtle">Tự gom nhiều link video từ các kênh khác nhau · dùng ↑ ↓ để đổi vị trí</div></div><button class="primary" data-q-action="create">+ Tạo danh sách</button></div><div class="notice"><b>Playback Engine:</b> mọi thao tác Phát, Nghe từ đây, Ngẫu nhiên và Lặp đều đi qua một engine duy nhất trước khi bàn giao sang Vivaldi. Mỗi lượt tối đa ${NBL_QUEUE_LIMIT} mục YouTube.</div><div class="grid nbl-queue-grid" style="margin-top:12px">${qs.map((q,i)=>`<div class="card category-card"><div class="card-actions"><button class="iconbtn" title="Đưa danh sách lên" data-q-list-move="up" data-q-id="${q.id}" ${i===0?'disabled':''}>↑</button><button class="iconbtn" title="Đưa danh sách xuống" data-q-list-move="down" data-q-id="${q.id}" ${i===qs.length-1?'disabled':''}>↓</button><button class="iconbtn" data-q-rename="${q.id}">Sửa</button></div><div class="category-index">#${i+1} · DANH SÁCH PHÁT</div><h3>${esc(q.name)}</h3><div class="count">${(q.videos||[]).length} video</div><div class="toolbar nbl-card-toolbar"><button class="ghost" data-q-open="${q.id}">Mở</button><button class="primary" data-q-play="${q.id}">▶ Phát</button><button class="ghost nbl-shuffle-btn" data-nbl-shuffle-card="${q.id}">🔀 Ngẫu nhiên</button></div></div>`).join('')}</div>${qs.length?'':'<div class="empty" style="margin-top:12px">Chưa có danh sách phát. Tạo một danh sách rồi dán các link video cần nghe.</div>'}`);
+    return shell(`<div class="section-title"><div><h2>Danh sách phát</h2><div class="subtle">Chạm/click vào dòng để mở · dùng ↑ ↓ để đổi vị trí</div></div><button class="primary" data-q-action="create">+ Tạo danh sách</button></div><div class="notice"><b>Playback Engine:</b> vào chi tiết danh sách để Phát, Nghe từ đây, Ngẫu nhiên hoặc Lặp. Mỗi lượt tối đa ${NBL_QUEUE_LIMIT} mục YouTube.</div><div class="grid nbl-queue-grid" style="margin-top:12px">${qs.map((q,i)=>`<div class="card category-card nbl-click-row" data-q-open="${q.id}" role="button" tabindex="0"><div class="card-actions"><button class="iconbtn" title="Đưa danh sách lên" data-q-list-move="up" data-q-id="${q.id}" ${i===0?'disabled':''}>↑</button><button class="iconbtn" title="Đưa danh sách xuống" data-q-list-move="down" data-q-id="${q.id}" ${i===qs.length-1?'disabled':''}>↓</button><button class="iconbtn" data-q-rename="${q.id}">Sửa</button></div><div class="category-index">#${i+1} · DANH SÁCH PHÁT</div><h3>${esc(q.name)}</h3><div class="count">${(q.videos||[]).length} video</div></div>`).join('')}</div>${qs.length?'':'<div class="empty" style="margin-top:12px">Chưa có danh sách phát. Tạo một danh sách rồi dán các link video cần nghe.</div>'}`);
   }
 
   function renderQueueDetail(q){
@@ -213,6 +213,14 @@
     };
   }
 
+  document.addEventListener('keydown',e=>{
+    if(e.key!=='Enter'&&e.key!==' ')return;
+    const row=e.target.closest?.('[data-q-open]');
+    if(!row||e.target.closest('button,a,input,textarea,select,label'))return;
+    e.preventDefault();
+    view.tab='queues';view.queueId=row.dataset.qOpen;render();
+  },true);
+
   document.addEventListener('click',function(e){
     const listMove=e.target.closest('[data-q-list-move]');
     if(listMove){e.preventDefault();e.stopImmediatePropagation();if(moveQueueById(listMove.dataset.qId,listMove.dataset.qListMove))render();return;}
@@ -224,7 +232,7 @@
     if(renameVideo){e.preventDefault();e.stopImmediatePropagation();const q=currentQueue();if(q)showRenameVideo(q,Number(renameVideo.dataset.qRenameVideo));return;}
 
     const open=e.target.closest('[data-q-open]');
-    if(open){e.preventDefault();e.stopImmediatePropagation();view.tab='queues';view.queueId=open.dataset.qOpen;render();return;}
+    if(open&&!e.target.closest('button,a,input,textarea,select,label')){e.preventDefault();e.stopImmediatePropagation();view.tab='queues';view.queueId=open.dataset.qOpen;render();return;}
 
     const action=e.target.closest('[data-q-action]')?.dataset.qAction;
     if(action){

@@ -1,4 +1,4 @@
-// News By Listening v1.9.1 - single Vivaldi player with stale-tab recovery
+// News By Listening v1.10.0 - ordering, editable titles and single Vivaldi player
 (function(){
   'use strict';
 
@@ -114,7 +114,7 @@
     if(!ids.length)return directOpenExternal(fallbackUrl,diagnosticId);
     if(!singleTabEnabled())return directOpenExternal(fallbackUrl,diagnosticId);
 
-    const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,createdAt:new Date().toISOString()};
+    const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.customTitle||sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,createdAt:new Date().toISOString()};
     updateDiagnostic(diagnosticId,{deliveryMode:'single-vivaldi-player',playerCommandId:command.id});
 
     let statusBefore=null;
@@ -175,14 +175,14 @@
     return cycle(source,shuffle).slice(0,QUEUE_LIMIT);
   }
   function queueUrl(sequence){const ids=(sequence||[]).map(x=>x?.videoId).filter(Boolean).slice(0,QUEUE_LIMIT);return ids.length?`https://www.youtube.com/watch_videos?video_ids=${ids.map(encodeURIComponent).join(',')}`:'';}
-  function recordQueueHistory(queue,sequence,url){const first=sequence?.[0];if(!first||typeof recordHistory!=='function')return;recordHistory({videoId:first.videoId,title:first.title,channelTitle:first.channelTitle,thumbnail:first.thumbnail},{title:queue?.name||'Danh sách phát'},url);}
+  function recordQueueHistory(queue,sequence,url){const first=sequence?.[0];if(!first||typeof recordHistory!=='function')return;recordHistory({videoId:first.videoId,title:first.customTitle||first.title,channelTitle:first.channelTitle,thumbnail:first.thumbnail},{title:queue?.name||'Danh sách phát'},url);}
 
   function playQueue(queue,{start=0,shuffle=false,honorRepeat=true,quiet=false}={}){
     if(!queue)return false;const mode=honorRepeat?normalizeMode(queue.repeatMode):'off';
     if((mode==='track-once'||mode==='track-infinity')&&!selectedTrack(queue)){toast('Hãy chọn một bài trong danh sách để lặp');return false;}
     const sequence=buildSequence(queue,{start,shuffle,honorRepeat});if(!sequence.length){toast('Danh sách chưa có video');return false;}
     const url=queueUrl(sequence);if(!url){toast('Không tạo được hàng đợi');return false;}recordQueueHistory(queue,sequence,url);
-    const first=sequence[0];const diagnosticId=createDiagnostic({action:start>0?'queue-from-here':'queue-play',sourceType:'custom-playlist',sourceName:queue.name||'Danh sách phát',startIndex:Number(start)||0,shuffle,repeatMode:mode,queueCount:sequence.length,firstVideoId:first?.videoId||'',firstTitle:first?.title||'',videoIds:sequence.map(x=>x?.videoId).filter(Boolean),url});
+    const first=sequence[0];const diagnosticId=createDiagnostic({action:start>0?'queue-from-here':'queue-play',sourceType:'custom-playlist',sourceName:queue.name||'Danh sách phát',startIndex:Number(start)||0,shuffle,repeatMode:mode,queueCount:sequence.length,firstVideoId:first?.videoId||'',firstTitle:first?.customTitle||first?.title||'',videoIds:sequence.map(x=>x?.videoId).filter(Boolean),url});
     if(!quiet){const repeatSuffix=mode==='off'?'':` · Lặp ${modeLabel(queue)}`;const fromSuffix=start>0?` · từ #${Number(start)+1}`:'';toast(`${shuffle?'Đã trộn':'Đã tạo'} ${sequence.length} mục${fromSuffix}${repeatSuffix}`);}
     return deliverSingleTab(sequence,{sourceName:queue.name||'Danh sách phát',repeatMode:mode,shuffle},diagnosticId,url);
   }
@@ -216,7 +216,7 @@
     const test=e.target.closest('[data-q-action="test-vivaldi"]');if(test){e.preventDefault();e.stopImmediatePropagation();openSinglePlayer();}
   }
 
-  const api={version:'1.9.1',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,playRandom,playLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
+  const api={version:'1.10.0',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,playRandom,playLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
   window.NBL_PLAYBACK_ENGINE=api;window.NBL_REPEAT_ENGINE=api;openExternal=api.openExternal;watchUrl=api.buildWatchUrl;playVideo=api.playLibraryVideo;
   document.addEventListener('click',handleQueuePlaybackClick,true);
 })();

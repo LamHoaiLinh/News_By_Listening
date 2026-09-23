@@ -81,17 +81,18 @@ async function loadChannelVideos(item){
 }
 async function loadPlaylistVideos(item){
   let token='',all=[],page=0;
-  const seenTokens=new Set();
+  const seenTokens=new Set(),seenVideoIds=new Set();
   do{
     const pageToken=token||'';
     if(pageToken&&seenTokens.has(pageToken))break;
     if(pageToken)seenTokens.add(pageToken);
     const p=await yt('playlistItems',{part:'snippet,contentDetails',playlistId:item.playlistId,maxResults:50,pageToken:pageToken||undefined});
-    const batch=(p.items||[]).map(x=>({videoId:x.contentDetails?.videoId||x.snippet?.resourceId?.videoId,title:x.snippet.title,channelTitle:x.snippet.videoOwnerChannelTitle||x.snippet.channelTitle,thumbnail:x.snippet.thumbnails?.medium?.url||x.snippet.thumbnails?.default?.url||ytThumb(x.contentDetails?.videoId),publishedAt:x.contentDetails?.videoPublishedAt||x.snippet.publishedAt,position:x.snippet.position})).filter(x=>x.videoId);
+    const batch=(p.items||[]).map(x=>({videoId:x.contentDetails?.videoId||x.snippet?.resourceId?.videoId,title:x.snippet.title,channelTitle:x.snippet.videoOwnerChannelTitle||x.snippet.channelTitle,thumbnail:x.snippet.thumbnails?.medium?.url||x.snippet.thumbnails?.default?.url||ytThumb(x.contentDetails?.videoId),publishedAt:x.contentDetails?.videoPublishedAt||x.snippet.publishedAt,position:x.snippet.position})).filter(x=>x.videoId&&!seenVideoIds.has(x.videoId));
+    for(const v of batch)seenVideoIds.add(v.videoId);
     all.push(...batch);
     token=p.nextPageToken||'';
     page++;
-    item.totalVideos=Math.max(Number(item.totalVideos)||0,all.length);
+    item.totalVideos=Math.max(Number(p.pageInfo?.totalResults)||0,Number(item.totalVideos)||0,all.length);
     if(view.itemId===item.id){
       view.playlistProgress=`Đã tải ${all.length} video · đợt ${page}${token?' · đang tải tiếp…':''}`;
       const progress=document.querySelector('[data-playlist-progress]');
@@ -100,7 +101,7 @@ async function loadPlaylistVideos(item){
     if(token)await new Promise(resolve=>setTimeout(resolve,120));
   }while(token);
   item.videos=all;
-  item.totalVideos=all.length||Number(item.totalVideos)||0;
+  item.totalVideos=Math.max(all.length,Number(item.totalVideos)||0);
   item.lastFetchedAt=new Date().toISOString();
   save();
   return all;
@@ -151,7 +152,7 @@ function renderCategory(){
 function renderItem(){
   const item=state.items.find(x=>x.id===view.itemId);if(!item){view.itemId=null;return renderCategory()}
   const videos=item.videos||[],isChannel=item.kind==='channel',apiMissing=!apiKey();
-  return shell(`<button class="ghost back" data-action="back-category">← ${esc(state.categories.find(c=>c.id===item.categoryId)?.name||'Thư viện')}</button><div class="card"><div style="display:flex;gap:14px;align-items:center"><img class="thumb" style="width:74px;height:74px" src="${esc(item.thumbnail||'./icon.svg')}" alt=""><div><span class="badge ${isChannel?'green':''}">${isChannel?'Kênh':'Playlist'}</span><h2 style="margin:8px 0 4px">${esc(item.title)}</h2><div class="subtle">Tốc độ ưa thích: ${state.prefs.speed}x${state.prefs.rememberSpeed?' · đang ghi nhớ':''}</div></div></div><div class="toolbar">${isChannel?`<button class="primary" data-action="play-latest">▶ Mở video mới nhất</button><button class="ghost" data-action="refresh-videos">↻ Tải 30 video mới nhất</button>`:`<button class="primary" data-action="play-playlist">▶ Phát từ đầu</button><button class="ghost" data-action="refresh-videos">↻ Tải toàn bộ playlist</button>`}<button class="ghost" data-action="open-source">Mở trang YouTube</button></div>${!isChannel?'<div class="subtle" data-playlist-progress>'+esc(view.playlistProgress||'Mỗi đợt tải tối đa 50 video; app tự tải tiếp đến khi YouTube hết trang.')+'</div>':''}${apiMissing?`<div class="notice warn">Chưa có YouTube Data API key. App vẫn mở được link trong Brave, nhưng cần API key để hiển thị danh sách video. Nhập một lần ở tab Cài đặt.</div>`:''}</div><div class="section-title"><div><h2>${isChannel?'Video mới nhất':'Video trong playlist'}</h2><div class="subtle">${videos.length?`${videos.length} video · cập nhật ${item.lastFetchedAt?relDate(item.lastFetchedAt):''}`:'Chưa tải danh sách'}</div></div>${view.loading?'<span class="loader"></span>':''}</div><div class="video-list">${videos.map((v,i)=>`<div class="card video"><img class="thumb" src="${esc(v.thumbnail||ytThumb(v.videoId))}" alt=""><div><div class="video-index">#${i+1}</div><h3>${esc(v.title)}</h3><div class="meta">${esc(v.channelTitle||'')} · ${v.publishedAt?relDate(v.publishedAt):''}</div></div><div class="row-actions"><button class="primary" data-play-video="${i}">▶ Nghe từ đây</button></div></div>`).join('')}</div>${videos.length?'':'<div class="empty">Bấm tải danh sách để chọn video cụ thể.</div>'}`)
+  return shell(`<button class="ghost back" data-action="back-category">← ${esc(state.categories.find(c=>c.id===item.categoryId)?.name||'Thư viện')}</button><div class="card"><div style="display:flex;gap:14px;align-items:center"><img class="thumb" style="width:74px;height:74px" src="${esc(item.thumbnail||'./icon.svg')}" alt=""><div><span class="badge ${isChannel?'green':''}">${isChannel?'Kênh':'Playlist'}</span><h2 style="margin:8px 0 4px">${esc(item.title)}</h2><div class="subtle">Tốc độ ưa thích: ${state.prefs.speed}x${state.prefs.rememberSpeed?' · đang ghi nhớ':''}</div></div></div><div class="toolbar">${isChannel?`<button class="primary" data-action="play-latest">▶ Mở video mới nhất</button><button class="ghost" data-action="refresh-videos">↻ Tải 30 video mới nhất</button>`:`<button class="primary" data-action="play-playlist">▶ Phát từ đầu</button><button class="ghost" data-action="refresh-videos">↻ Tải toàn bộ playlist</button>`}<button class="ghost" data-action="open-source">Mở trang YouTube</button></div>${!isChannel?'<div class="subtle" data-playlist-progress>'+esc(view.playlistProgress||'Mỗi đợt tải tối đa 50 video; app tự tải tiếp đến khi YouTube hết trang.')+'</div>':''}${item.playlistMetadataWarning?`<div class="notice warn">Không đọc được metadata playlist, nhưng app vẫn thử tải trực tiếp các video trong playlist. ${esc(item.playlistMetadataWarning)}</div>`:''}${apiMissing?`<div class="notice warn">Chưa có YouTube Data API key. App vẫn mở được link trong Brave, nhưng cần API key để hiển thị danh sách video. Nhập một lần ở tab Cài đặt.</div>`:''}</div><div class="section-title"><div><h2>${isChannel?'Video mới nhất':'Video trong playlist'}</h2><div class="subtle">${videos.length?`${videos.length} video · cập nhật ${item.lastFetchedAt?relDate(item.lastFetchedAt):''}`:'Chưa tải danh sách'}</div></div>${view.loading?'<span class="loader"></span>':''}</div><div class="video-list">${videos.map((v,i)=>`<div class="card video"><img class="thumb" src="${esc(v.thumbnail||ytThumb(v.videoId))}" alt=""><div><div class="video-index">#${i+1}</div><h3>${esc(v.title)}</h3><div class="meta">${esc(v.channelTitle||'')} · ${v.publishedAt?relDate(v.publishedAt):''}</div></div><div class="row-actions"><button class="primary" data-play-video="${i}">▶ Nghe từ đây</button></div></div>`).join('')}</div>${videos.length?'':'<div class="empty">Bấm tải danh sách để chọn video cụ thể.</div>'}`)
 }
 function renderHistory(){const h=state.history;return shell(`<div class="section-title"><div><h2>Đã nghe</h2><div class="subtle">Ghi nhận khi bạn bấm mở video từ app · tự xóa sau ${HISTORY_DAYS} ngày</div></div><button class="ghost" data-action="clear-history">Xóa hết</button></div><div class="entry-list">${h.map(x=>`<div class="card entry"><img class="thumb" src="${esc(x.thumbnail||ytThumb(x.videoId))}" alt=""><div><h3>${esc(x.title)}</h3><div class="meta">${esc(x.channelTitle||'')} · ${fmtDate(x.openedAt)}</div></div><div class="row-actions"><button class="ghost" data-history-open="${x.id}">Mở lại</button></div></div>`).join('')}</div>${h.length?'':'<div class="empty">Chưa có lịch sử trong 3 ngày gần đây.</div>'}`)
 }

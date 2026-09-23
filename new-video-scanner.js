@@ -1,4 +1,4 @@
-// News By Listening v1.7.0 - silent new-video scanner for YouTube channels
+// News By Listening v1.10.1 - silent scanner that augments, never replaces, Library UI
 (function(){
   const SCAN_INTERVAL_MS=2*60*60*1000;
   const CHECK_TICK_MS=5*60*1000;
@@ -78,12 +78,42 @@
     return `Tự quét khoảng 2 giờ/lần · quét ${h} giờ trước`;
   }
 
-  renderCategory=function(){
-    const c=state.categories.find(x=>x.id===view.categoryId);
-    if(!c){view.categoryId=null;return renderLibrary();}
-    const items=categoryItems(c.id);
-    return shell(`<button class="ghost back" data-action="back-library">← Phân loại</button><div class="section-title"><div><h2>${esc(c.name)}</h2><div class="subtle">Cấp 2 · Kênh YouTube hoặc playlist</div><div class="nbl-scan-status">${esc(scannerStatusText())} · chỉ báo trong app, không push notification</div></div><button class="primary" data-action="add-item">+ Dán link</button></div><div class="entry-list">${items.map(item=>{const n=item.kind==='channel'?pendingCount(item):0;return `<div class="card entry"><img class="thumb" src="${esc(item.thumbnail||'./icon.svg')}" alt=""><div>${n?`<div class="nbl-new-video-badge">${n} VIDEO MỚI</div>`:''}<h3>${esc(item.title)}</h3><div class="meta">${item.kind==='channel'?'Kênh YouTube':item.kind==='playlist'?'Playlist':'Video'}${item.kind==='playlist'&&item.totalVideos!=null?' · '+item.totalVideos+' video':''}</div></div><div class="row-actions"><button class="ghost" data-open-item="${item.id}">Mở</button><button class="iconbtn" data-edit-item="${item.id}">Sửa</button></div></div>`}).join('')}</div>${items.length?'':'<div class="empty">Dán link kênh hoặc playlist YouTube để bắt đầu.</div>'}`);
-  };
+  function enhanceCategoryScanner(){
+    if(view.tab!=='library'||!view.categoryId||view.itemId)return;
+    const titleBlock=document.querySelector('#app .section-title > div');
+    if(titleBlock&&!titleBlock.querySelector('.nbl-scan-status')){
+      const status=document.createElement('div');
+      status.className='nbl-scan-status';
+      status.textContent=`${scannerStatusText()} · chỉ báo trong app, không push notification`;
+      titleBlock.appendChild(status);
+    }
+    document.querySelectorAll('#app .entry-list .card.entry').forEach(row=>{
+      const open=row.querySelector('[data-open-item]');
+      const item=open?state.items.find(x=>x.id===open.dataset.openItem):null;
+      if(!item||item.kind!=='channel')return;
+      const n=pendingCount(item);
+      row.querySelector('.nbl-new-video-badge')?.remove();
+      if(!n)return;
+      const info=row.querySelector('img.thumb')?.nextElementSibling;
+      const h3=info?.querySelector('h3');
+      if(!info||!h3)return;
+      const badge=document.createElement('div');
+      badge.className='nbl-new-video-badge';
+      badge.textContent=`${n} VIDEO MỚI`;
+      info.insertBefore(badge,h3);
+    });
+  }
+
+  // Do not replace renderCategory(). The base Library renderer owns ordering controls
+  // and future Library features; the scanner only decorates the rendered DOM.
+  if(typeof render==='function'){
+    const baseRender=render;
+    render=function(...args){
+      const out=baseRender(...args);
+      enhanceCategoryScanner();
+      return out;
+    };
+  }
 
   document.addEventListener('click',e=>{
     const btn=e.target.closest('[data-open-item]');

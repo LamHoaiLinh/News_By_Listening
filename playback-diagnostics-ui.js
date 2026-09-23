@@ -1,4 +1,4 @@
-// News By Listening v1.10.0 - playback diagnostics + ordering release
+// News By Listening v1.10.2 - playback diagnostics + click-row navigation
 (function(){
   'use strict';
   const E=window.NBL_PLAYBACK_ENGINE;
@@ -59,7 +59,7 @@
     if(single)single.outerHTML=singleHtml;else shell.insertAdjacentHTML('beforeend',singleHtml);
     let panel=shell.querySelector('[data-nbl-diagnostics-panel]');const html=renderPanel();
     if(panel)panel.outerHTML=html;else shell.insertAdjacentHTML('beforeend',html);
-    document.querySelectorAll('#app .subtle').forEach(el=>{if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.10.1 · Sửa sắp xếp Thư viện + tải toàn bộ playlist';});
+    document.querySelectorAll('#app .subtle').forEach(el=>{if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.10.2 · Chạm dòng để mở + giao diện gọn';});
   }
 
   async function copyLogs(){const text=JSON.stringify(E.diagnostics(),null,2);try{await navigator.clipboard.writeText(text);toast('Đã sao chép nhật ký Playback');}catch{toast('Không thể sao chép tự động');}}

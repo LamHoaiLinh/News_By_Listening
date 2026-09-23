@@ -1,4 +1,4 @@
-const CACHE='nbl-v1.9.1';
+const CACHE='nbl-v1.10.0';
 const ASSETS=['./','./index.html','./styles.css','./v13.css','./v14.css','./v15.css','./v16.css','./v18.css','./v18-mobile-hotfix.css','./slots-bootstrap.js','./app.js','./hotfix.js','./sync-v2.js','./youtube-backend.js','./router-core.js','./playback-safety.js','./playback-engine.js','./playlists-ui-v2.js','./slots-ui.js','./repeat-ui.js','./new-video-scanner.js','./bulk-refresh-v2.js','./playback-diagnostics-ui.js','./player.html','./player.css','./player.js','./manifest.webmanifest','./icon.svg'];
 
 self.addEventListener('install',e=>e.waitUntil(

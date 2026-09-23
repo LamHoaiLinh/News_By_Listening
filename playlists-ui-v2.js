@@ -1,4 +1,4 @@
-// News By Listening v1.7.0 - custom playlist data + UI only
+// News By Listening v1.10.0 - custom playlist ordering + editable display titles
 // Playback is owned exclusively by playback-engine.js.
 (function(){
   'use strict';
@@ -113,6 +113,14 @@
   }
 
   function currentQueue(){return (state.customPlaylists||[]).find(x=>x.id===view.queueId)||null;}
+  function videoLabel(v){return String(v?.customTitle||v?.title||v?.videoId||'Video');}
+  function moveQueueById(id,direction){
+    const qs=state.customPlaylists||[],i=qs.findIndex(x=>x.id===id),j=direction==='up'?i-1:i+1;
+    if(i<0||j<0||j>=qs.length)return false;
+    [qs[i],qs[j]]=[qs[j],qs[i]];
+    qs[i].updatedAt=new Date().toISOString();qs[j].updatedAt=new Date().toISOString();
+    save();return true;
+  }
 
   function modal(html){
     const root=document.createElement('div');
@@ -146,6 +154,19 @@
     };
   }
 
+  function showRenameVideo(q,index){
+    const v=q?.videos?.[index];if(!v)return;
+    const root=modal(`<h2>Đổi tên hiển thị video</h2><div class="field"><label>Tên hiển thị trong News By Listening</label><input id="qv-title" class="input" value="${esc(videoLabel(v))}"><small class="subtle">Tên YouTube gốc: ${esc(v.title||v.videoId||'')}</small></div><div class="modal-actions"><button class="ghost" data-original>Khôi phục tên YouTube</button><button class="ghost" data-close>Hủy</button><button class="primary" data-save>Lưu</button></div>`);
+    root.querySelector('[data-close]').onclick=()=>root.remove();
+    root.querySelector('[data-original]').onclick=()=>{delete v.customTitle;q.updatedAt=new Date().toISOString();save();root.remove();render();toast('Đã khôi phục tên YouTube');};
+    root.querySelector('[data-save]').onclick=()=>{
+      const name=root.querySelector('#qv-title').value.trim();
+      if(!name)return toast('Nhập tên hiển thị');
+      if(name===(v.title||''))delete v.customTitle;else v.customTitle=name;
+      q.updatedAt=new Date().toISOString();save();root.remove();render();toast('Đã đổi tên hiển thị');
+    };
+  }
+
   function showAddVideos(q){
     const root=modal(`<h2>Thêm video vào ${esc(q.name)}</h2><div class="field"><label>Dán nhiều link YouTube</label><textarea id="qp-links" class="input nbl-textarea" placeholder="Mỗi link một dòng"></textarea><small class="subtle">Link trùng trong danh sách sẽ tự bỏ qua.</small></div><div class="modal-actions"><button class="ghost" data-close>Hủy</button><button class="primary" data-save>Thêm video</button></div>`);
     root.querySelector('[data-close]').onclick=()=>root.remove();
@@ -164,12 +185,12 @@
 
   function renderQueueList(){
     const qs=state.customPlaylists||[];
-    return shell(`<div class="section-title"><div><h2>Danh sách phát</h2><div class="subtle">Tự gom nhiều link video từ các kênh khác nhau</div></div><button class="primary" data-q-action="create">+ Tạo danh sách</button></div><div class="notice"><b>Playback Engine 1.7:</b> mọi thao tác Phát, Nghe từ đây, Ngẫu nhiên và Lặp đều đi qua một engine duy nhất trước khi bàn giao sang Vivaldi. Mỗi lượt tối đa ${NBL_QUEUE_LIMIT} mục YouTube.</div><div class="grid nbl-queue-grid" style="margin-top:12px">${qs.map(q=>`<div class="card category-card"><div class="card-actions"><button class="iconbtn" data-q-rename="${q.id}">Sửa</button></div><div class="category-index">DANH SÁCH PHÁT</div><h3>${esc(q.name)}</h3><div class="count">${(q.videos||[]).length} video</div><div class="toolbar nbl-card-toolbar"><button class="ghost" data-q-open="${q.id}">Mở</button><button class="primary" data-q-play="${q.id}">▶ Phát</button><button class="ghost nbl-shuffle-btn" data-nbl-shuffle-card="${q.id}">🔀 Ngẫu nhiên</button></div></div>`).join('')}</div>${qs.length?'':'<div class="empty" style="margin-top:12px">Chưa có danh sách phát. Tạo một danh sách rồi dán các link video cần nghe.</div>'}`);
+    return shell(`<div class="section-title"><div><h2>Danh sách phát</h2><div class="subtle">Tự gom nhiều link video từ các kênh khác nhau · dùng ↑ ↓ để đổi vị trí</div></div><button class="primary" data-q-action="create">+ Tạo danh sách</button></div><div class="notice"><b>Playback Engine:</b> mọi thao tác Phát, Nghe từ đây, Ngẫu nhiên và Lặp đều đi qua một engine duy nhất trước khi bàn giao sang Vivaldi. Mỗi lượt tối đa ${NBL_QUEUE_LIMIT} mục YouTube.</div><div class="grid nbl-queue-grid" style="margin-top:12px">${qs.map((q,i)=>`<div class="card category-card"><div class="card-actions"><button class="iconbtn" title="Đưa danh sách lên" data-q-list-move="up" data-q-id="${q.id}" ${i===0?'disabled':''}>↑</button><button class="iconbtn" title="Đưa danh sách xuống" data-q-list-move="down" data-q-id="${q.id}" ${i===qs.length-1?'disabled':''}>↓</button><button class="iconbtn" data-q-rename="${q.id}">Sửa</button></div><div class="category-index">#${i+1} · DANH SÁCH PHÁT</div><h3>${esc(q.name)}</h3><div class="count">${(q.videos||[]).length} video</div><div class="toolbar nbl-card-toolbar"><button class="ghost" data-q-open="${q.id}">Mở</button><button class="primary" data-q-play="${q.id}">▶ Phát</button><button class="ghost nbl-shuffle-btn" data-nbl-shuffle-card="${q.id}">🔀 Ngẫu nhiên</button></div></div>`).join('')}</div>${qs.length?'':'<div class="empty" style="margin-top:12px">Chưa có danh sách phát. Tạo một danh sách rồi dán các link video cần nghe.</div>'}`);
   }
 
   function renderQueueDetail(q){
     const vs=q.videos||[];
-    return shell(`<button class="ghost back" data-q-action="back">← Danh sách phát</button><div class="section-title"><div><h2>${esc(q.name)}</h2><div class="subtle">${vs.length} video · kéo thả trên PC hoặc dùng ↑ ↓ để đổi thứ tự</div></div><button class="primary" data-q-action="add-videos">+ Dán video</button></div><div class="toolbar"><button class="primary" data-q-action="play-all">▶ Phát từ đầu</button><button class="ghost nbl-shuffle-btn" data-nbl-shuffle-current="1">🔀 Phát ngẫu nhiên</button><button class="ghost" data-q-action="rename">Đổi tên</button><button class="danger" data-q-action="delete-queue">Xóa danh sách</button></div>${vs.length>NBL_QUEUE_LIMIT?`<div class="notice warn">Danh sách có ${vs.length} video. Một lượt YouTube phát tối đa ${NBL_QUEUE_LIMIT} mục. Bấm “Nghe từ đây” ở phần tiếp theo để tiếp tục.</div>`:''}<div class="video-list nbl-queue-videos">${vs.map((v,i)=>`<div class="card video nbl-q-video" draggable="true" data-q-index="${i}"><img class="thumb" src="${esc(v.thumbnail||ytThumb(v.videoId))}" alt=""><div><div class="video-index">#${i+1}</div><h3>${esc(v.title)}</h3><div class="meta">${esc(v.channelTitle||'')}${v.duration?' · '+fmtDuration(v.duration):''}</div></div><div class="row-actions"><button class="iconbtn" data-q-move="up" data-index="${i}" ${i===0?'disabled':''}>↑</button><button class="iconbtn" data-q-move="down" data-index="${i}" ${i===vs.length-1?'disabled':''}>↓</button><button class="primary" data-q-play-index="${i}">▶ Nghe từ đây</button><button class="danger" data-q-remove="${i}">Xóa</button></div></div>`).join('')}</div>${vs.length?'':'<div class="empty">Dán các link video YouTube để bắt đầu.</div>'}`);
+    return shell(`<button class="ghost back" data-q-action="back">← Danh sách phát</button><div class="section-title"><div><h2>${esc(q.name)}</h2><div class="subtle">${vs.length} video · kéo thả trên PC hoặc dùng ↑ ↓ để đổi thứ tự · nút “Tên” để đặt tên riêng</div></div><button class="primary" data-q-action="add-videos">+ Dán video</button></div><div class="toolbar"><button class="primary" data-q-action="play-all">▶ Phát từ đầu</button><button class="ghost nbl-shuffle-btn" data-nbl-shuffle-current="1">🔀 Phát ngẫu nhiên</button><button class="ghost" data-q-action="rename">Đổi tên DS</button><button class="danger" data-q-action="delete-queue">Xóa danh sách</button></div>${vs.length>NBL_QUEUE_LIMIT?`<div class="notice warn">Danh sách có ${vs.length} video. Một lượt YouTube phát tối đa ${NBL_QUEUE_LIMIT} mục. Bấm “Nghe từ đây” ở phần tiếp theo để tiếp tục.</div>`:''}<div class="video-list nbl-queue-videos">${vs.map((v,i)=>`<div class="card video nbl-q-video" draggable="true" data-q-index="${i}"><img class="thumb" src="${esc(v.thumbnail||ytThumb(v.videoId))}" alt=""><div><div class="video-index">#${i+1}${v.customTitle?' · TÊN RIÊNG':''}</div><h3>${esc(videoLabel(v))}</h3><div class="meta">${v.customTitle?`Tên YouTube: ${esc(v.title||v.videoId)} · `:''}${esc(v.channelTitle||'')}${v.duration?' · '+fmtDuration(v.duration):''}</div></div><div class="row-actions"><button class="iconbtn" data-q-move="up" data-index="${i}" ${i===0?'disabled':''}>↑</button><button class="iconbtn" data-q-move="down" data-index="${i}" ${i===vs.length-1?'disabled':''}>↓</button><button class="ghost" data-q-rename-video="${i}">Tên</button><button class="primary" data-q-play-index="${i}">▶ Nghe từ đây</button><button class="danger" data-q-remove="${i}">Xóa</button></div></div>`).join('')}</div>${vs.length?'':'<div class="empty">Dán các link video YouTube để bắt đầu.</div>'}`);
   }
 
   function renderQueues(){const q=currentQueue();return q?renderQueueDetail(q):renderQueueList();}
@@ -193,8 +214,14 @@
   }
 
   document.addEventListener('click',function(e){
+    const listMove=e.target.closest('[data-q-list-move]');
+    if(listMove){e.preventDefault();e.stopImmediatePropagation();if(moveQueueById(listMove.dataset.qId,listMove.dataset.qListMove))render();return;}
+
     const renameCard=e.target.closest('[data-q-rename]');
     if(renameCard){e.preventDefault();e.stopImmediatePropagation();const q=state.customPlaylists.find(x=>x.id===renameCard.dataset.qRename);if(q)showRenameQueue(q);return;}
+
+    const renameVideo=e.target.closest('[data-q-rename-video]');
+    if(renameVideo){e.preventDefault();e.stopImmediatePropagation();const q=currentQueue();if(q)showRenameVideo(q,Number(renameVideo.dataset.qRenameVideo));return;}
 
     const open=e.target.closest('[data-q-open]');
     if(open){e.preventDefault();e.stopImmediatePropagation();view.tab='queues';view.queueId=open.dataset.qOpen;render();return;}
@@ -219,7 +246,7 @@
     if(remove){
       e.preventDefault();e.stopImmediatePropagation();
       const q=currentQueue(),i=Number(remove.dataset.qRemove);
-      if(q&&q.videos?.[i]&&confirm(`Xóa “${q.videos[i].title}” khỏi danh sách?`)){
+      if(q&&q.videos?.[i]&&confirm(`Xóa “${videoLabel(q.videos[i])}” khỏi danh sách?`)){
         q.videos.splice(i,1);
         if(q.repeatVideoId&&!q.videos.some(v=>v.videoId===q.repeatVideoId))q.repeatVideoId=null;
         q.updatedAt=new Date().toISOString();save();render();

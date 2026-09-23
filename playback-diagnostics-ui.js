@@ -1,4 +1,4 @@
-// News By Listening v1.9.1 - playback diagnostics + stale-player recovery
+// News By Listening v1.10.0 - playback diagnostics + ordering release
 (function(){
   'use strict';
   const E=window.NBL_PLAYBACK_ENGINE;
@@ -59,7 +59,7 @@
     if(single)single.outerHTML=singleHtml;else shell.insertAdjacentHTML('beforeend',singleHtml);
     let panel=shell.querySelector('[data-nbl-diagnostics-panel]');const html=renderPanel();
     if(panel)panel.outerHTML=html;else shell.insertAdjacentHTML('beforeend',html);
-    document.querySelectorAll('#app .subtle').forEach(el=>{if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.9.1 · Auto-Recover Vivaldi Player + Playback Diagnostics';});
+    document.querySelectorAll('#app .subtle').forEach(el=>{if(/^Phiên bản\s+/i.test(el.textContent||''))el.textContent='Phiên bản 1.10.0 · Sắp xếp + đổi tên + tải toàn bộ playlist';});
   }
 
   async function copyLogs(){const text=JSON.stringify(E.diagnostics(),null,2);try{await navigator.clipboard.writeText(text);toast('Đã sao chép nhật ký Playback');}catch{toast('Không thể sao chép tự động');}}

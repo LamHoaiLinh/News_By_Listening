@@ -1,4 +1,4 @@
-// News By Listening v1.7.0 - repeat controls UI only
+// News By Listening v1.10.0 - repeat controls UI only
 (function(){
   if(!window.NBL_REPEAT_ENGINE)return;
   const E=window.NBL_REPEAT_ENGINE;
@@ -81,7 +81,7 @@
       note.className='notice nbl-repeat-status';
       toolbar?.insertAdjacentElement('afterend',note);
     }
-    const selectedName=selected?` · bài chọn: ${esc(selected.title)}`:'';
+    const selectedName=selected?` · bài chọn: ${esc(selected.customTitle||selected.title)}`:'';
     note.innerHTML=`<b>Lặp:</b> ${esc(E.modeLabel(q))}${selectedName}${q.repeatMode.includes('infinity')?' · ký hiệu ∞ được lấp đầy đến giới hạn 50 mục/lượt':''}`;
   }
 

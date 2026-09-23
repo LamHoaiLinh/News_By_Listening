@@ -80,13 +80,31 @@ async function loadChannelVideos(item){
   item.lastFetchedAt=new Date().toISOString();save();return item.videos;
 }
 async function loadPlaylistVideos(item){
-  let token='',all=[],guard=0;
+  let token='',all=[],page=0;
+  const seenTokens=new Set(),seenVideoIds=new Set();
   do{
-    const p=await yt('playlistItems',{part:'snippet,contentDetails',playlistId:item.playlistId,maxResults:50,pageToken:token||undefined});
-    all.push(...(p.items||[]).map(x=>({videoId:x.contentDetails?.videoId||x.snippet?.resourceId?.videoId,title:x.snippet.title,channelTitle:x.snippet.videoOwnerChannelTitle||x.snippet.channelTitle,thumbnail:x.snippet.thumbnails?.medium?.url||x.snippet.thumbnails?.default?.url||ytThumb(x.contentDetails?.videoId),publishedAt:x.contentDetails?.videoPublishedAt||x.snippet.publishedAt,position:x.snippet.position})).filter(x=>x.videoId));
-    token=p.nextPageToken||'';guard++;
-  }while(token&&guard<20);
-  item.videos=all;item.lastFetchedAt=new Date().toISOString();save();return all;
+    const pageToken=token||'';
+    if(pageToken&&seenTokens.has(pageToken))break;
+    if(pageToken)seenTokens.add(pageToken);
+    const p=await yt('playlistItems',{part:'snippet,contentDetails',playlistId:item.playlistId,maxResults:50,pageToken:pageToken||undefined});
+    const batch=(p.items||[]).map(x=>({videoId:x.contentDetails?.videoId||x.snippet?.resourceId?.videoId,title:x.snippet.title,channelTitle:x.snippet.videoOwnerChannelTitle||x.snippet.channelTitle,thumbnail:x.snippet.thumbnails?.medium?.url||x.snippet.thumbnails?.default?.url||ytThumb(x.contentDetails?.videoId),publishedAt:x.contentDetails?.videoPublishedAt||x.snippet.publishedAt,position:x.snippet.position})).filter(x=>x.videoId&&!seenVideoIds.has(x.videoId));
+    for(const v of batch)seenVideoIds.add(v.videoId);
+    all.push(...batch);
+    token=p.nextPageToken||'';
+    page++;
+    item.totalVideos=Math.max(Number(p.pageInfo?.totalResults)||0,Number(item.totalVideos)||0,all.length);
+    if(view.itemId===item.id){
+      view.playlistProgress=`Đã tải ${all.length} video · đợt ${page}${token?' · đang tải tiếp…':''}`;
+      const progress=document.querySelector('[data-playlist-progress]');
+      if(progress)progress.textContent=view.playlistProgress;
+    }
+    if(token)await new Promise(resolve=>setTimeout(resolve,120));
+  }while(token);
+  item.videos=all;
+  item.totalVideos=Math.max(all.length,Number(item.totalVideos)||0);
+  item.lastFetchedAt=new Date().toISOString();
+  save();
+  return all;
 }
 function watchUrl(item,video,index){
   if(item.kind==='playlist')return `https://www.youtube.com/watch?v=${encodeURIComponent(video.videoId)}&list=${encodeURIComponent(item.playlistId)}&index=${Number(index)+1}&autoplay=1`;
@@ -104,16 +122,37 @@ function openExternal(url){
 }
 function playVideo(item,video,index){const url=watchUrl(item,video,index);recordHistory(video,item,url);openExternal(url)}
 function categoryItems(id){return state.items.filter(x=>x.categoryId===id)}
+function moveCategoryById(id,direction){
+  const i=state.categories.findIndex(c=>c.id===id),j=direction==='up'?i-1:i+1;
+  if(i<0||j<0||j>=state.categories.length)return false;
+  [state.categories[i],state.categories[j]]=[state.categories[j],state.categories[i]];
+  save();return true;
+}
+function moveLibraryItemById(id,direction){
+  const item=state.items.find(x=>x.id===id);if(!item)return false;
+  const indices=state.items.map((x,i)=>x.categoryId===item.categoryId?i:-1).filter(i=>i>=0);
+  const pos=indices.findIndex(i=>state.items[i]?.id===id),next=direction==='up'?pos-1:pos+1;
+  if(pos<0||next<0||next>=indices.length)return false;
+  const a=indices[pos],b=indices[next];
+  [state.items[a],state.items[b]]=[state.items[b],state.items[a]];
+  save();return true;
+}
 function nav(){return `<nav class="bottomnav">${[['library','Thư viện'],['history','Đã nghe'],['sync','Đồng bộ'],['settings','Cài đặt']].map(([id,t])=>`<button class="navbtn ${view.tab===id?'active':''}" data-nav="${id}">${t}</button>`).join('')}</nav>`}
 function shell(content){return `<div class="shell"><header class="topbar"><div class="brand"><div class="logo">NBL</div><div><h1>News By Listening</h1><p>Chọn nhanh · Mở Brave · Nghe liên tục</p></div></div><span class="badge green">${esc(state.prefs.speed)}x ưa thích</span></header>${content}</div>${nav()}`}
 function renderLibrary(){
   if(view.itemId)return renderItem();
   if(view.categoryId)return renderCategory();
-  return shell(`<div class="section-title"><div><h2>Phân loại</h2><div class="subtle">Cấp 1 · Có thể thêm, sửa, xóa và sắp xếp</div></div><button class="primary" data-action="add-category">+ Thêm</button></div><div class="grid">${state.categories.map((c,i)=>`<div class="card category-card" data-open-category="${c.id}"><div class="card-actions"><button class="iconbtn" title="Sửa" data-edit-category="${c.id}">Sửa</button></div><div class="category-index">${i+1}. PHÂN LOẠI</div><h3>${esc(c.name)}</h3><div class="count">${categoryItems(c.id).length} kênh / playlist</div></div>`).join('')}</div>${state.categories.length?'':'<div class="empty">Chưa có phân loại.</div>'}`)
+  return shell(`<div class="section-title"><div><h2>Phân loại</h2><div class="subtle">Cấp 1 · Có thể thêm, sửa, xóa và sắp xếp</div></div><button class="primary" data-action="add-category">+ Thêm</button></div><div class="grid">${state.categories.map((c,i)=>`<div class="card category-card" data-open-category="${c.id}"><div class="card-actions"><button class="iconbtn" title="Đưa lên" data-move-category-card="up" data-category-id="${c.id}" ${i===0?'disabled':''}>↑</button><button class="iconbtn" title="Đưa xuống" data-move-category-card="down" data-category-id="${c.id}" ${i===state.categories.length-1?'disabled':''}>↓</button><button class="iconbtn" title="Sửa" data-edit-category="${c.id}">Sửa</button></div><div class="category-index">${i+1}. PHÂN LOẠI</div><h3>${esc(c.name)}</h3><div class="count">${categoryItems(c.id).length} kênh / playlist</div></div>`).join('')}</div>${state.categories.length?'':'<div class="empty">Chưa có phân loại.</div>'}`)
 }
-function renderCategory(){const c=state.categories.find(x=>x.id===view.categoryId);if(!c){view.categoryId=null;return renderLibrary()}const items=categoryItems(c.id);return shell(`<button class="ghost back" data-action="back-library">← Phân loại</button><div class="section-title"><div><h2>${esc(c.name)}</h2><div class="subtle">Cấp 2 · Kênh YouTube hoặc playlist</div></div><button class="primary" data-action="add-item">+ Dán link</button></div><div class="entry-list">${items.map(item=>`<div class="card entry"><img class="thumb" src="${esc(item.thumbnail||'./icon.svg')}" alt=""><div><h3>${esc(item.title)}</h3><div class="meta">${item.kind==='channel'?'Kênh YouTube':item.kind==='playlist'?'Playlist':'Video'}${item.kind==='playlist'&&item.totalVideos!=null?' · '+item.totalVideos+' video':''}</div></div><div class="row-actions"><button class="ghost" data-open-item="${item.id}">Mở</button><button class="iconbtn" data-edit-item="${item.id}">Sửa</button></div></div>`).join('')}</div>${items.length?'':'<div class="empty">Dán link kênh hoặc playlist YouTube để bắt đầu.</div>'}`)
+function renderCategory(){
+  const c=state.categories.find(x=>x.id===view.categoryId);if(!c){view.categoryId=null;return renderLibrary()}
+  const items=categoryItems(c.id);
+  return shell(`<button class="ghost back" data-action="back-library">← Phân loại</button><div class="section-title"><div><h2>${esc(c.name)}</h2><div class="subtle">Cấp 2 · Kênh YouTube hoặc playlist · dùng ↑ ↓ để sắp xếp</div></div><button class="primary" data-action="add-item">+ Dán link</button></div><div class="entry-list">${items.map((item,i)=>`<div class="card entry"><img class="thumb" src="${esc(item.thumbnail||'./icon.svg')}" alt=""><div><h3>${esc(item.title)}</h3><div class="meta">${item.kind==='channel'?'Kênh YouTube':item.kind==='playlist'?'Playlist':'Video'}${item.kind==='playlist'&&item.totalVideos!=null?' · '+item.totalVideos+' video':''}</div></div><div class="row-actions"><button class="iconbtn" title="Đưa lên" data-move-library-item="up" data-item-id="${item.id}" ${i===0?'disabled':''}>↑</button><button class="iconbtn" title="Đưa xuống" data-move-library-item="down" data-item-id="${item.id}" ${i===items.length-1?'disabled':''}>↓</button><button class="ghost" data-open-item="${item.id}">Mở</button><button class="iconbtn" data-edit-item="${item.id}">Sửa</button></div></div>`).join('')}</div>${items.length?'':'<div class="empty">Dán link kênh hoặc playlist YouTube để bắt đầu.</div>'}`)
 }
-function renderItem(){const item=state.items.find(x=>x.id===view.itemId);if(!item){view.itemId=null;return renderCategory()}const videos=item.videos||[];const isChannel=item.kind==='channel';const apiMissing=!apiKey();return shell(`<button class="ghost back" data-action="back-category">← ${esc(state.categories.find(c=>c.id===item.categoryId)?.name||'Thư viện')}</button><div class="card"><div style="display:flex;gap:14px;align-items:center"><img class="thumb" style="width:74px;height:74px" src="${esc(item.thumbnail||'./icon.svg')}" alt=""><div><span class="badge ${isChannel?'green':''}">${isChannel?'Kênh':'Playlist'}</span><h2 style="margin:8px 0 4px">${esc(item.title)}</h2><div class="subtle">Tốc độ ưa thích: ${state.prefs.speed}x${state.prefs.rememberSpeed?' · đang ghi nhớ':''}</div></div></div><div class="toolbar">${isChannel?`<button class="primary" data-action="play-latest">▶ Mở video mới nhất</button><button class="ghost" data-action="refresh-videos">↻ Tải 30 video mới nhất</button>`:`<button class="primary" data-action="play-playlist">▶ Phát từ đầu</button><button class="ghost" data-action="refresh-videos">↻ Tải danh sách playlist</button>`}<button class="ghost" data-action="open-source">Mở trang YouTube</button></div>${apiMissing?`<div class="notice warn">Chưa có YouTube Data API key. App vẫn mở được link trong Brave, nhưng cần API key để hiển thị danh sách video. Nhập một lần ở tab Cài đặt.</div>`:''}</div><div class="section-title"><div><h2>${isChannel?'Video mới nhất':'Video trong playlist'}</h2><div class="subtle">${videos.length?`${videos.length} video · cập nhật ${item.lastFetchedAt?relDate(item.lastFetchedAt):''}`:'Chưa tải danh sách'}</div></div>${view.loading?'<span class="loader"></span>':''}</div><div class="video-list">${videos.map((v,i)=>`<div class="card video"><img class="thumb" src="${esc(v.thumbnail||ytThumb(v.videoId))}" alt=""><div><div class="video-index">#${i+1}</div><h3>${esc(v.title)}</h3><div class="meta">${esc(v.channelTitle||'')} · ${v.publishedAt?relDate(v.publishedAt):''}</div></div><div class="row-actions"><button class="primary" data-play-video="${i}">▶ Nghe từ đây</button></div></div>`).join('')}</div>${videos.length?'':'<div class="empty">Bấm tải danh sách để chọn video cụ thể.</div>'}`)
+function renderItem(){
+  const item=state.items.find(x=>x.id===view.itemId);if(!item){view.itemId=null;return renderCategory()}
+  const videos=item.videos||[],isChannel=item.kind==='channel',apiMissing=!apiKey();
+  return shell(`<button class="ghost back" data-action="back-category">← ${esc(state.categories.find(c=>c.id===item.categoryId)?.name||'Thư viện')}</button><div class="card"><div style="display:flex;gap:14px;align-items:center"><img class="thumb" style="width:74px;height:74px" src="${esc(item.thumbnail||'./icon.svg')}" alt=""><div><span class="badge ${isChannel?'green':''}">${isChannel?'Kênh':'Playlist'}</span><h2 style="margin:8px 0 4px">${esc(item.title)}</h2><div class="subtle">Tốc độ ưa thích: ${state.prefs.speed}x${state.prefs.rememberSpeed?' · đang ghi nhớ':''}</div></div></div><div class="toolbar">${isChannel?`<button class="primary" data-action="play-latest">▶ Mở video mới nhất</button><button class="ghost" data-action="refresh-videos">↻ Tải 30 video mới nhất</button>`:`<button class="primary" data-action="play-playlist">▶ Phát từ đầu</button><button class="ghost" data-action="refresh-videos">↻ Tải toàn bộ playlist</button>`}<button class="ghost" data-action="open-source">Mở trang YouTube</button></div>${!isChannel?'<div class="subtle" data-playlist-progress>'+esc(view.playlistProgress||'Mỗi đợt tải tối đa 50 video; app tự tải tiếp đến khi YouTube hết trang.')+'</div>':''}${item.playlistMetadataWarning?`<div class="notice warn">Không đọc được metadata playlist, nhưng app vẫn thử tải trực tiếp các video trong playlist. ${esc(item.playlistMetadataWarning)}</div>`:''}${apiMissing?`<div class="notice warn">Chưa có YouTube Data API key. App vẫn mở được link trong Brave, nhưng cần API key để hiển thị danh sách video. Nhập một lần ở tab Cài đặt.</div>`:''}</div><div class="section-title"><div><h2>${isChannel?'Video mới nhất':'Video trong playlist'}</h2><div class="subtle">${videos.length?`${videos.length} video · cập nhật ${item.lastFetchedAt?relDate(item.lastFetchedAt):''}`:'Chưa tải danh sách'}</div></div>${view.loading?'<span class="loader"></span>':''}</div><div class="video-list">${videos.map((v,i)=>`<div class="card video"><img class="thumb" src="${esc(v.thumbnail||ytThumb(v.videoId))}" alt=""><div><div class="video-index">#${i+1}</div><h3>${esc(v.title)}</h3><div class="meta">${esc(v.channelTitle||'')} · ${v.publishedAt?relDate(v.publishedAt):''}</div></div><div class="row-actions"><button class="primary" data-play-video="${i}">▶ Nghe từ đây</button></div></div>`).join('')}</div>${videos.length?'':'<div class="empty">Bấm tải danh sách để chọn video cụ thể.</div>'}`)
 }
 function renderHistory(){const h=state.history;return shell(`<div class="section-title"><div><h2>Đã nghe</h2><div class="subtle">Ghi nhận khi bạn bấm mở video từ app · tự xóa sau ${HISTORY_DAYS} ngày</div></div><button class="ghost" data-action="clear-history">Xóa hết</button></div><div class="entry-list">${h.map(x=>`<div class="card entry"><img class="thumb" src="${esc(x.thumbnail||ytThumb(x.videoId))}" alt=""><div><h3>${esc(x.title)}</h3><div class="meta">${esc(x.channelTitle||'')} · ${fmtDate(x.openedAt)}</div></div><div class="row-actions"><button class="ghost" data-history-open="${x.id}">Mở lại</button></div></div>`).join('')}</div>${h.length?'':'<div class="empty">Chưa có lịch sử trong 3 ngày gần đây.</div>'}`)
 }
@@ -128,13 +167,35 @@ function render(){save();app.innerHTML=view.tab==='library'?renderLibrary():view
 function modal(html){document.body.insertAdjacentHTML('beforeend',`<div class="modalback" id="modalback"><div class="modal">${html}</div></div>`);document.getElementById('modalback').addEventListener('click',e=>{if(e.target.id==='modalback'||e.target.closest('[data-close-modal]'))document.getElementById('modalback').remove()})}
 function categoryModal(c){modal(`<h2>${c?'Sửa phân loại':'Thêm phân loại'}</h2><div class="form"><div class="field"><label>Tên phân loại</label><input class="input" id="cat-name" value="${esc(c?.name||'')}"></div>${c?`<div class="toolbar"><button class="ghost" data-move-cat="up">↑ Lên</button><button class="ghost" data-move-cat="down">↓ Xuống</button><button class="danger" data-delete-cat="${c.id}">Xóa phân loại</button></div>`:''}</div><div class="modal-actions"><button class="ghost" data-close-modal>Hủy</button><button class="primary" data-save-cat="${c?.id||''}">Lưu</button></div>`)}
 function itemModal(item){modal(`<h2>${item?'Sửa mục':'Dán link YouTube'}</h2><div class="form"><div class="field"><label>Link YouTube</label><input class="input" id="item-url" value="${esc(item?.url||'')}" placeholder="https://www.youtube.com/@kenh/videos hoặc ...playlist?list=..."></div><div class="field"><label>Tên hiển thị (có thể để trống)</label><input class="input" id="item-title" value="${esc(item?.title||'')}"></div>${item?'<button class="danger" data-delete-item="'+item.id+'">Xóa mục này</button>':''}</div><div class="modal-actions"><button class="ghost" data-close-modal>Hủy</button><button class="primary" data-save-item="${item?.id||''}">Lưu</button></div>`)}
-async function refreshCurrent(){const item=state.items.find(x=>x.id===view.itemId);if(!item)return;view.loading=true;render();try{await resolveItem(item);if(item.kind==='channel')await loadChannelVideos(item);else if(item.kind==='playlist')await loadPlaylistVideos(item);save();toast('Đã cập nhật danh sách video')}catch(e){toast(e.message)}finally{view.loading=false;render()}}
+async function refreshCurrent(){
+  const item=state.items.find(x=>x.id===view.itemId);if(!item)return;
+  view.loading=true;view.playlistProgress='';render();
+  try{
+    if(item.kind==='channel'){
+      await resolveItem(item);
+      await loadChannelVideos(item);
+    }else if(item.kind==='playlist'){
+      try{
+        await resolveItem(item);
+        item.playlistMetadataWarning='';
+      }catch(metaError){
+        item.playlistMetadataWarning=String(metaError?.message||metaError||'Không đọc được metadata playlist');
+      }
+      await loadPlaylistVideos(item);
+    }
+    save();
+    toast(`Đã cập nhật ${(item.videos||[]).length} video`);
+  }catch(e){toast(e.message||'Không tải được danh sách video')}
+  finally{view.loading=false;view.playlistProgress='';render()}
+}
 function bind(){
   document.querySelectorAll('[data-nav]').forEach(b=>b.onclick=()=>{view.tab=b.dataset.nav;view.categoryId=null;view.itemId=null;render()});
-  document.querySelectorAll('[data-open-category]').forEach(el=>el.onclick=e=>{if(e.target.closest('[data-edit-category]'))return;view.categoryId=el.dataset.openCategory;render()});
+  document.querySelectorAll('[data-open-category]').forEach(el=>el.onclick=e=>{if(e.target.closest('[data-edit-category],[data-move-category-card]'))return;view.categoryId=el.dataset.openCategory;render()});
+  document.querySelectorAll('[data-move-category-card]').forEach(b=>b.onclick=e=>{e.stopPropagation();if(moveCategoryById(b.dataset.categoryId,b.dataset.moveCategoryCard))render()});
   document.querySelectorAll('[data-edit-category]').forEach(b=>b.onclick=e=>{e.stopPropagation();categoryModal(state.categories.find(c=>c.id===b.dataset.editCategory))});
   document.querySelectorAll('[data-open-item]').forEach(b=>b.onclick=()=>{view.itemId=b.dataset.openItem;render()});
   document.querySelectorAll('[data-edit-item]').forEach(b=>b.onclick=()=>itemModal(state.items.find(x=>x.id===b.dataset.editItem)));
+  document.querySelectorAll('[data-move-library-item]').forEach(b=>b.onclick=()=>{if(moveLibraryItemById(b.dataset.itemId,b.dataset.moveLibraryItem))render()});
   document.querySelector('[data-action="add-category"]')?.addEventListener('click',()=>categoryModal(null));
   document.querySelector('[data-action="back-library"]')?.addEventListener('click',()=>{view.categoryId=null;render()});
   document.querySelector('[data-action="back-category"]')?.addEventListener('click',()=>{view.itemId=null;render()});

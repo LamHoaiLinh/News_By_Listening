@@ -116,9 +116,9 @@
   }
 
   document.addEventListener('click',e=>{
-    const btn=e.target.closest('[data-open-item]');
-    if(!btn)return;
-    const item=state.items.find(x=>x.id===btn.dataset.openItem);
+    const row=e.target.closest('[data-open-item]');
+    if(!row||e.target.closest('button,a,input,textarea,select,label'))return;
+    const item=state.items.find(x=>x.id===row.dataset.openItem);
     markChannelSeen(item);
   },true);
 

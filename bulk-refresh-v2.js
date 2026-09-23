@@ -1,4 +1,4 @@
-// News By Listening v1.7.0 - global refresh action without DOM-structure assumptions
+// News By Listening v1.10.0 - global refresh with full playlist pagination
 (function(){
   'use strict';
 
@@ -49,7 +49,12 @@
       return;
     }
     if(item.kind==='playlist'){
-      await resolveItem(item);
+      try{
+        await resolveItem(item);
+        item.playlistMetadataWarning='';
+      }catch(metaError){
+        item.playlistMetadataWarning=String(metaError?.message||metaError||'Không đọc được metadata playlist');
+      }
       await loadPlaylistVideos(item);
       return;
     }

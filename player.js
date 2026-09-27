@@ -21,6 +21,7 @@
   let rateRetryTimer=null;
   let listenTimer=null;
   let trackedVideoId='';
+  let remoteProgressBusy=false;
 
   function setStatus(text,kind=''){
     statusEl.textContent=text;
@@ -116,6 +117,12 @@
     }catch{return {videoId:'',currentTime:0,duration:0};}
   }
 
+  function pushRemoteProgress(progress){
+    if(remoteProgressBusy||!progress?.videoId)return;
+    remoteProgressBusy=true;
+    relay('progress',{progress}).catch(e=>console.warn('[NBL Player] progress relay failed',e)).finally(()=>{remoteProgressBusy=false;});
+  }
+
   function pushListenProgress({ended=false}={}){
     const tracker=window.NBL_LISTEN_STATUS;
     if(!tracker||!ytPlayer||!ytReady)return;
@@ -124,6 +131,7 @@
     if(!videoId)return;
     if(!ended)trackedVideoId=videoId;
     tracker.markPlayback(videoId,snap.currentTime,snap.duration,{ended});
+    pushRemoteProgress({videoId,position:snap.currentTime,duration:snap.duration,ended});
   }
 
   function stopListenTracking({ended=false}={}){

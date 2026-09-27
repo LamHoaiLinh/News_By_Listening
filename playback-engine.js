@@ -1,4 +1,4 @@
-// News By Listening v1.13.0 - playback-rate handoff + resume position
+// News By Listening v1.13.2 - playback-rate handoff + versioned player
 (function(){
   'use strict';
 
@@ -6,6 +6,7 @@
   const DIAGNOSTIC_LIMIT=20;
   const PLAYER_HEARTBEAT_MAX_AGE_MS=2*60*60*1000;
   const RELAY_URL='https://qjpcxhackvoewcxlatis.supabase.co/functions/v1/nbl-player-relay';
+  const EXPECTED_PLAYER_VERSION='1.13.2';
   const MODES=new Set(['off','list-once','list-infinity','track-once','track-infinity']);
 
   state.prefs ||= {};
@@ -66,7 +67,7 @@
     try{const u=new URL(String(target),location.href);if(u.protocol==='http:'||u.protocol==='https:')return 'vivaldi://'+u.href.replace(/^https?:\/\//i,'');}catch{}
     return 'vivaldi://'+String(target).replace(/^https?:\/\//i,'');
   }
-  function playerPageUrl(){const u=new URL('./player.html',location.href);u.hash='t='+encodeURIComponent(state.prefs.singleVivaldiPlayerToken);return u.href;}
+  function playerPageUrl(){const u=new URL('./player.html',location.href);u.searchParams.set('pv',EXPECTED_PLAYER_VERSION);u.hash='t='+encodeURIComponent(state.prefs.singleVivaldiPlayerToken);return u.href;}
 
   async function relay(action,extra={}){
     const ctrl=new AbortController();const timer=setTimeout(()=>ctrl.abort(),4500);
@@ -81,7 +82,8 @@
     if(!Number.isFinite(seenAt))return false;
     const previousId=state.prefs.singleVivaldiLastCommandId||'';
     const previousWasAcked=!previousId||status?.ackId===previousId;
-    return previousWasAcked&&(Date.now()-seenAt)<=PLAYER_HEARTBEAT_MAX_AGE_MS;
+    const versionOk=String(status?.playerVersion||'')===EXPECTED_PLAYER_VERSION;
+    return versionOk&&previousWasAcked&&(Date.now()-seenAt)<=PLAYER_HEARTBEAT_MAX_AGE_MS;
   }
 
   function looksLikePlaybackUrl(target){
@@ -138,7 +140,7 @@
 
     const playbackRate=preferredPlaybackRate();
     const startSeconds=Math.max(0,Number(meta?.startSeconds)||0);
-    const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.customTitle||sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,playbackRate,startSeconds,createdAt:new Date().toISOString()};
+    const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.customTitle||sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,playbackRate,startSeconds,requiredPlayerVersion:EXPECTED_PLAYER_VERSION,createdAt:new Date().toISOString()};
     updateDiagnostic(diagnosticId,{deliveryMode:'single-player',playerCommandId:command.id,playbackRate,startSeconds});
 
     let statusBefore=null;
@@ -245,7 +247,7 @@
     const test=e.target.closest('[data-q-action="test-vivaldi"]');if(test){e.preventDefault();e.stopImmediatePropagation();openSinglePlayer();}
   }
 
-  const api={version:'1.13.0',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,normalizePlaybackRate,preferredPlaybackRate,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,resumeQueueFromIndex,playRandom,playLibraryVideo,resumeLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
+  const api={version:'1.13.2',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,normalizePlaybackRate,preferredPlaybackRate,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,resumeQueueFromIndex,playRandom,playLibraryVideo,resumeLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
   window.NBL_PLAYBACK_ENGINE=api;window.NBL_REPEAT_ENGINE=api;openExternal=api.openExternal;watchUrl=api.buildWatchUrl;playVideo=api.playLibraryVideo;
   document.addEventListener('click',handleQueuePlaybackClick,true);
 })();

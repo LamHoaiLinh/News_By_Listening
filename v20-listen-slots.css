@@ -1,4 +1,4 @@
-/* News By Listening v1.12.1 - listen status colors + compact slot copy/paste */
+/* News By Listening v1.13.0 - listen status + resume + compact slot copy/paste */
 .nbl-listen-tag{
   appearance:none!important;
   display:inline-flex!important;
@@ -53,4 +53,22 @@
   .nbl-slot-card{align-items:flex-start!important}
   .nbl-slot-actions{width:100%!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important}
   .nbl-slot-actions .nbl-slot-small,.nbl-slot-actions .badge{width:100%!important;text-align:center!important;justify-content:center!important}
+}
+
+.nbl-resume-progress{
+  margin-top:6px!important;
+  color:#8fb6ff!important;
+  font-size:11px!important;
+  font-weight:700!important;
+  line-height:1.3!important;
+}
+.nbl-resume-btn,.nbl-restart-btn{
+  white-space:nowrap!important;
+}
+.nbl-resume-btn{
+  box-shadow:0 8px 20px rgba(116,240,195,.12)!important;
+}
+@media(max-width:700px){
+  .nbl-resume-progress{font-size:9.5px!important}
+  .nbl-resume-btn,.nbl-restart-btn{font-size:10px!important;padding:8px 7px!important}
 }

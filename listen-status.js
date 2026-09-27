@@ -1,4 +1,4 @@
-// News By Listening v1.12.0 - listen status + manual status cycle
+// News By Listening v1.13.0 - listen status + resume controls
 (function(){
   'use strict';
 
@@ -166,6 +166,65 @@
   function currentQueue(){
     try{return queueById(typeof view!=='undefined'?view.queueId:null);}catch{return null;}
   }
+  function formatClock(seconds){
+    const total=Math.max(0,Math.floor(Number(seconds)||0));
+    const h=Math.floor(total/3600),m=Math.floor((total%3600)/60),s=total%60;
+    return h?`${h}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`:`${m}:${String(s).padStart(2,'0')}`;
+  }
+  function resumeInfo(videoId){
+    const rec=videoRecord(videoId)||{};
+    const position=Math.max(0,Number(rec.position)||0),duration=Math.max(0,Number(rec.duration)||0);
+    const ratio=duration>0?Math.max(0,Math.min(1,position/duration)):0;
+    const canResume=position>=30&&rec.status!=='done'&&(duration<=0||ratio<AUTO_DONE_AT_RATIO);
+    return {position,duration,ratio,canResume,status:rec.status||'none'};
+  }
+  function upsertResumeUI(card,video,index,kind,baseButton){
+    if(!card||!video?.videoId||!baseButton)return;
+    const info=resumeInfo(video.videoId);
+    const textWrap=card.querySelector('.video-index')?.parentElement;
+    let progress=card.querySelector(`[data-nbl-progress-video="${video.videoId}"]`);
+    if(info.position>=5){
+      const pct=info.duration>0?` · ${Math.round(info.ratio*100)}%`:'';
+      const durationText=info.duration>0?` / ${formatClock(info.duration)}`:'';
+      const text=`Đã nghe ${formatClock(info.position)}${durationText}${pct}`;
+      if(!progress&&textWrap){
+        progress=document.createElement('div');
+        progress.className='nbl-resume-progress';
+        progress.dataset.nblProgressVideo=video.videoId;
+        textWrap.appendChild(progress);
+      }
+      if(progress&&progress.textContent!==text)progress.textContent=text;
+    }else if(progress)progress.remove();
+
+    const actions=baseButton.closest('.row-actions');if(!actions)return;
+    const selector=kind==='library'?'[data-nbl-resume-library]':'[data-nbl-resume-queue]';
+    let resumeBtn=actions.querySelector(selector);
+    if(info.canResume){
+      if(!resumeBtn){
+        resumeBtn=document.createElement('button');
+        resumeBtn.type='button';
+        resumeBtn.className='primary nbl-resume-btn';
+        if(kind==='library'){
+          resumeBtn.dataset.nblResumeLibrary='1';
+          resumeBtn.dataset.itemId=String(view.itemId||'');
+        }else resumeBtn.dataset.nblResumeQueue='1';
+        actions.insertBefore(resumeBtn,baseButton);
+      }
+      resumeBtn.dataset.index=String(index);
+      resumeBtn.dataset.startSeconds=String(Math.floor(info.position));
+      resumeBtn.textContent=`▶ Tiếp tục ${formatClock(info.position)}`;
+      resumeBtn.title=`Tiếp tục từ vị trí đã lưu: ${formatClock(info.position)}`;
+      baseButton.textContent='↺ Nghe lại từ đầu';
+      baseButton.classList.remove('primary');
+      baseButton.classList.add('ghost','nbl-restart-btn');
+    }else{
+      if(resumeBtn)resumeBtn.remove();
+      baseButton.textContent=info.status==='done'?'↺ Nghe lại từ đầu':'▶ Nghe từ đây';
+      baseButton.classList.remove('nbl-restart-btn');
+      baseButton.classList.toggle('primary',info.status!=='done');
+      baseButton.classList.toggle('ghost',info.status==='done');
+    }
+  }
 
   function enhanceLibraryCards(root){
     root.querySelectorAll?.('[data-open-item]').forEach(card=>{
@@ -181,9 +240,11 @@
       const card=playBtn.closest('.card.video'),idx=Number(playBtn.dataset.playVideo);
       const item=(typeof view!=='undefined')?itemById(view.itemId):null;
       const video=item?.videos?.[idx];if(!card||!video?.videoId)return;
-      if(card.querySelector(`[data-nbl-status-video="${String(video.videoId)}"]`))return;
-      const info=card.querySelector('.video-index')?.parentElement;
-      if(info)info.appendChild(makeTag({nblStatusVideo:video.videoId},videoStatus(video.videoId)));
+      if(!card.querySelector(`[data-nbl-status-video="${String(video.videoId)}"]`)){
+        const textWrap=card.querySelector('.video-index')?.parentElement;
+        if(textWrap)textWrap.appendChild(makeTag({nblStatusVideo:video.videoId},videoStatus(video.videoId)));
+      }
+      upsertResumeUI(card,video,idx,'library',playBtn);
     });
   }
   function enhanceQueueCards(root){
@@ -199,9 +260,12 @@
     const q=currentQueue();if(!q)return;
     root.querySelectorAll?.('.nbl-q-video[data-q-index]').forEach(card=>{
       const idx=Number(card.dataset.qIndex),video=q.videos?.[idx];if(!video?.videoId)return;
-      if(card.querySelector(`[data-nbl-status-video="${String(video.videoId)}"]`))return;
-      const info=card.querySelector('.video-index')?.parentElement;
-      if(info)info.appendChild(makeTag({nblStatusVideo:video.videoId},videoStatus(video.videoId)));
+      if(!card.querySelector(`[data-nbl-status-video="${String(video.videoId)}"]`)){
+        const textWrap=card.querySelector('.video-index')?.parentElement;
+        if(textWrap)textWrap.appendChild(makeTag({nblStatusVideo:video.videoId},videoStatus(video.videoId)));
+      }
+      const playBtn=card.querySelector('[data-q-play-index]');
+      if(playBtn)upsertResumeUI(card,video,idx,'queue',playBtn);
     });
   }
   function enhanceDetailHeaders(root){
@@ -230,6 +294,8 @@
   }
   function refreshTags(){
     document.querySelectorAll?.('[data-nbl-status-video]').forEach(b=>applyTag(b,videoStatus(b.dataset.nblStatusVideo)));
+    const root=document.getElementById('app');
+    if(root){enhanceLibraryVideos(root);enhanceQueueVideos(root);}
     document.querySelectorAll?.('[data-nbl-status-item]').forEach(b=>{
       const item=itemById(b.dataset.nblStatusItem);if(item)applyTag(b,groupStatus('item',item.id,item.videos||[]));
     });
@@ -239,8 +305,8 @@
   }
 
   window.NBL_LISTEN_STATUS={
-    version:'1.12.1',KEY,AUTO_LISTENING_AT_RATIO,AUTO_DONE_AT_RATIO,
-    videoRecord,videoStatus,setVideoStatus,cycleVideoStatus,markPlayback,
+    version:'1.13.0',KEY,AUTO_LISTENING_AT_RATIO,AUTO_DONE_AT_RATIO,
+    videoRecord,videoStatus,setVideoStatus,cycleVideoStatus,markPlayback,resumeInfo,formatClock,
     derivedStatus,groupStatus,setGroupStatus,cycleGroupStatus,
     exportData,importData,enhance,refreshTags
   };
@@ -265,6 +331,29 @@
   }
 
   document.addEventListener('click',e=>{
+    const resumeLibrary=e.target.closest?.('[data-nbl-resume-library]');
+    if(resumeLibrary){
+      e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+      const item=itemById(resumeLibrary.dataset.itemId||view?.itemId);
+      const index=Number(resumeLibrary.dataset.index),video=item?.videos?.[index];
+      const startSeconds=Math.max(0,Number(resumeLibrary.dataset.startSeconds)||0);
+      if(item&&video&&window.NBL_PLAYBACK_ENGINE?.resumeLibraryVideo){
+        window.NBL_PLAYBACK_ENGINE.resumeLibraryVideo(item,video,index,startSeconds);
+        if(typeof toast==='function')toast(`Tiếp tục từ ${formatClock(startSeconds)}`);
+      }
+      return;
+    }
+    const resumeQueue=e.target.closest?.('[data-nbl-resume-queue]');
+    if(resumeQueue){
+      e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+      const q=currentQueue(),index=Number(resumeQueue.dataset.index);
+      const startSeconds=Math.max(0,Number(resumeQueue.dataset.startSeconds)||0);
+      if(q&&window.NBL_PLAYBACK_ENGINE?.resumeQueueFromIndex){
+        window.NBL_PLAYBACK_ENGINE.resumeQueueFromIndex(q,index,startSeconds);
+        if(typeof toast==='function')toast(`Tiếp tục từ ${formatClock(startSeconds)}`);
+      }
+      return;
+    }
     const videoBtn=e.target.closest?.('[data-nbl-status-video]');
     if(videoBtn){
       e.preventDefault();e.stopPropagation();

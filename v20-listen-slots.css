@@ -1,0 +1,56 @@
+/* News By Listening v1.12.1 - listen status colors + compact slot copy/paste */
+.nbl-listen-tag{
+  appearance:none!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  justify-content:center!important;
+  width:max-content!important;
+  max-width:100%!important;
+  margin-top:7px!important;
+  padding:5px 9px!important;
+  border-radius:999px!important;
+  font-size:11px!important;
+  font-weight:800!important;
+  line-height:1!important;
+  cursor:pointer!important;
+  white-space:nowrap!important;
+  box-shadow:none!important;
+}
+.nbl-listen-tag.is-none{
+  background:#343a43!important;
+  border:1px solid #59616d!important;
+  color:#e4e8ee!important;
+}
+.nbl-listen-tag.is-listening{
+  background:#123d2f!important;
+  border:1px solid #35a87c!important;
+  color:#9ff4d2!important;
+}
+.nbl-listen-tag.is-done{
+  background:#4a1821!important;
+  border:1px solid #d45a6c!important;
+  color:#ffc0c9!important;
+}
+.nbl-listen-tag:hover{filter:brightness(1.08);transform:translateY(-1px)}
+
+.nbl-slot-modal{width:min(980px,calc(100vw - 26px))!important}
+.nbl-slot-card{gap:12px!important}
+.nbl-slot-info{min-width:180px;flex:1}
+.nbl-slot-actions{display:flex!important;align-items:center!important;justify-content:flex-end!important;gap:5px!important;flex-wrap:wrap!important}
+.nbl-slot-actions .nbl-slot-small{
+  min-width:0!important;
+  padding:7px 9px!important;
+  border-radius:10px!important;
+  font-size:11px!important;
+  line-height:1!important;
+  white-space:nowrap!important;
+}
+.nbl-slot-actions .nbl-slot-small:disabled{opacity:.35!important;cursor:not-allowed!important}
+.nbl-slot-actions .badge{padding:6px 8px!important;font-size:10px!important}
+
+@media(max-width:700px){
+  .nbl-listen-tag{font-size:9.5px!important;padding:4px 6px!important;margin-top:5px!important}
+  .nbl-slot-card{align-items:flex-start!important}
+  .nbl-slot-actions{width:100%!important;display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:5px!important}
+  .nbl-slot-actions .nbl-slot-small,.nbl-slot-actions .badge{width:100%!important;text-align:center!important;justify-content:center!important}
+}

@@ -1,4 +1,4 @@
-// News By Listening v1.9.0 - persistent Vivaldi player tab
+// News By Listening v1.11.0 - persistent player with playback-rate handoff
 (function(){
   'use strict';
 
@@ -17,6 +17,8 @@
   let lastCommandId='';
   let pollTimer=null;
   let busy=false;
+  let desiredPlaybackRate=1;
+  let rateRetryTimer=null;
 
   function setStatus(text,kind=''){
     statusEl.textContent=text;
@@ -49,9 +51,55 @@
     return (command?.videoIds||[]).map(String).filter(x=>/^[A-Za-z0-9_-]{11}$/.test(x)).slice(0,50);
   }
 
+  function normalizeRate(value){
+    const rate=Number(value);
+    if(!Number.isFinite(rate))return 1;
+    return Math.max(0.25,Math.min(2,rate));
+  }
+
+  function nearestAvailableRate(requested){
+    if(!ytPlayer||!ytReady)return requested;
+    try{
+      const rates=ytPlayer.getAvailablePlaybackRates?.()||[];
+      if(!rates.length)return requested;
+      if(rates.includes(requested))return requested;
+      return rates.reduce((best,current)=>
+        Math.abs(current-requested)<Math.abs(best-requested)?current:best
+      ,rates[0]);
+    }catch{return requested;}
+  }
+
+  function applyPlaybackRate({retry=true}={}){
+    if(!ytPlayer||!ytReady)return false;
+    clearTimeout(rateRetryTimer);
+    const requested=normalizeRate(desiredPlaybackRate);
+    const target=nearestAvailableRate(requested);
+    try{
+      ytPlayer.setPlaybackRate(target);
+      if(retry){
+        rateRetryTimer=setTimeout(()=>{
+          try{
+            const actual=Number(ytPlayer.getPlaybackRate?.()||1);
+            if(Math.abs(actual-target)>0.001)ytPlayer.setPlaybackRate(target);
+          }catch{}
+        },700);
+      }
+      return true;
+    }catch(e){
+      console.warn('[NBL Player] setPlaybackRate failed',e);
+      return false;
+    }
+  }
+
+  function playbackStatusText(){
+    let actual=desiredPlaybackRate;
+    try{actual=Number(ytPlayer?.getPlaybackRate?.()||desiredPlaybackRate)||desiredPlaybackRate;}catch{}
+    return `Đang phát · ${actual}x · 1 tab`;
+  }
+
   function updateInfo(command,ids){
     titleEl.textContent=command?.title||command?.sourceName||`YouTube ${ids[0]||''}`;
-    metaEl.textContent=[command?.sourceName||'',command?.shuffle?'Ngẫu nhiên':'',command?.repeatMode&&command.repeatMode!=='off'?`Lặp: ${command.repeatMode}`:''].filter(Boolean).join(' · ')||'Queue nhận từ News By Listening';
+    metaEl.textContent=[command?.sourceName||'',command?.shuffle?'Ngẫu nhiên':'',command?.repeatMode&&command.repeatMode!=='off'?`Lặp: ${command.repeatMode}`:'',`${normalizeRate(command?.playbackRate||1)}x`].filter(Boolean).join(' · ')||'Queue nhận từ News By Listening';
     countEl.textContent=String(ids.length);
   }
 
@@ -67,6 +115,7 @@
     const ids=validIds(command);
     if(!ids.length){setStatus('Queue không hợp lệ','bad');return;}
     lastCommandId=command.id;
+    desiredPlaybackRate=normalizeRate(command.playbackRate||1);
     updateInfo(command,ids);
 
     if(!ytReady||!ytPlayer){
@@ -79,8 +128,10 @@
     try{
       if(ids.length===1)ytPlayer.loadVideoById(ids[0]);
       else ytPlayer.loadPlaylist(ids,0,0);
-      setStatus('Đã nhận queue · đang phát','ok');
+      setStatus(`Đã nhận queue · mục tiêu ${desiredPlaybackRate}x`,'ok');
       resumeBtn.hidden=true;
+      setTimeout(()=>applyPlaybackRate(),250);
+      setTimeout(()=>applyPlaybackRate(),1200);
       setTimeout(showResumeIfNeeded,1800);
       ack(command.id);
     }catch(e){
@@ -128,8 +179,15 @@
           else poll();
         },
         onStateChange(e){
-          if(e.data===YT.PlayerState.PLAYING){resumeBtn.hidden=true;setStatus('Đang phát · 1 tab','ok');}
+          if(e.data===YT.PlayerState.PLAYING){
+            applyPlaybackRate();
+            resumeBtn.hidden=true;
+            setTimeout(()=>setStatus(playbackStatusText(),'ok'),120);
+          }
           if(e.data===YT.PlayerState.PAUSED||e.data===YT.PlayerState.CUED)showResumeIfNeeded();
+        },
+        onPlaybackRateChange(){
+          if(ytReady)setStatus(playbackStatusText(),'ok');
         },
         onError(e){setStatus(`YouTube lỗi ${e.data}`,'bad');resumeBtn.hidden=false;}
       }
@@ -137,7 +195,7 @@
   };
 
   resumeBtn.addEventListener('click',()=>{
-    try{ytPlayer?.playVideo();resumeBtn.hidden=true;setStatus('Đang phát · 1 tab','ok');}catch{}
+    try{ytPlayer?.playVideo();applyPlaybackRate();resumeBtn.hidden=true;setStatus(playbackStatusText(),'ok');}catch{}
   });
 
   document.addEventListener('visibilitychange',()=>{

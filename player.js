@@ -1,4 +1,4 @@
-// News By Listening v1.11.0 - persistent player with playback-rate handoff
+// News By Listening v1.12.0 - persistent player + listen status tracking
 (function(){
   'use strict';
 
@@ -19,6 +19,8 @@
   let busy=false;
   let desiredPlaybackRate=1;
   let rateRetryTimer=null;
+  let listenTimer=null;
+  let trackedVideoId='';
 
   function setStatus(text,kind=''){
     statusEl.textContent=text;
@@ -97,6 +99,45 @@
     return `Đang phát · ${actual}x · 1 tab`;
   }
 
+  function playbackSnapshot(){
+    if(!ytPlayer||!ytReady)return {videoId:'',currentTime:0,duration:0};
+    try{
+      const data=ytPlayer.getVideoData?.()||{};
+      let videoId=String(data.video_id||'');
+      if(!videoId){
+        const url=String(ytPlayer.getVideoUrl?.()||'');
+        try{videoId=new URL(url).searchParams.get('v')||'';}catch{}
+      }
+      return {
+        videoId:/^[A-Za-z0-9_-]{11}$/.test(videoId)?videoId:'',
+        currentTime:Number(ytPlayer.getCurrentTime?.()||0)||0,
+        duration:Number(ytPlayer.getDuration?.()||0)||0
+      };
+    }catch{return {videoId:'',currentTime:0,duration:0};}
+  }
+
+  function pushListenProgress({ended=false}={}){
+    const tracker=window.NBL_LISTEN_STATUS;
+    if(!tracker||!ytPlayer||!ytReady)return;
+    const snap=playbackSnapshot();
+    const videoId=ended?(trackedVideoId||snap.videoId):snap.videoId;
+    if(!videoId)return;
+    if(!ended)trackedVideoId=videoId;
+    tracker.markPlayback(videoId,snap.currentTime,snap.duration,{ended});
+  }
+
+  function stopListenTracking({ended=false}={}){
+    if(listenTimer){clearInterval(listenTimer);listenTimer=null;}
+    pushListenProgress({ended});
+    if(ended)trackedVideoId='';
+  }
+
+  function startListenTracking(){
+    if(listenTimer)clearInterval(listenTimer);
+    pushListenProgress();
+    listenTimer=setInterval(()=>pushListenProgress(),5000);
+  }
+
   function updateInfo(command,ids){
     titleEl.textContent=command?.title||command?.sourceName||`YouTube ${ids[0]||''}`;
     metaEl.textContent=[command?.sourceName||'',command?.shuffle?'Ngẫu nhiên':'',command?.repeatMode&&command.repeatMode!=='off'?`Lặp: ${command.repeatMode}`:'',`${normalizeRate(command?.playbackRate||1)}x`].filter(Boolean).join(' · ')||'Queue nhận từ News By Listening';
@@ -125,6 +166,7 @@
     }
 
     pendingCommand=null;
+    stopListenTracking();
     try{
       if(ids.length===1)ytPlayer.loadVideoById(ids[0]);
       else ytPlayer.loadPlaylist(ids,0,0);
@@ -181,15 +223,22 @@
         onStateChange(e){
           if(e.data===YT.PlayerState.PLAYING){
             applyPlaybackRate();
+            startListenTracking();
             resumeBtn.hidden=true;
             setTimeout(()=>setStatus(playbackStatusText(),'ok'),120);
           }
-          if(e.data===YT.PlayerState.PAUSED||e.data===YT.PlayerState.CUED)showResumeIfNeeded();
+          if(e.data===YT.PlayerState.PAUSED||e.data===YT.PlayerState.CUED){
+            stopListenTracking();
+            showResumeIfNeeded();
+          }
+          if(e.data===YT.PlayerState.ENDED){
+            stopListenTracking({ended:true});
+          }
         },
         onPlaybackRateChange(){
           if(ytReady)setStatus(playbackStatusText(),'ok');
         },
-        onError(e){setStatus(`YouTube lỗi ${e.data}`,'bad');resumeBtn.hidden=false;}
+        onError(e){stopListenTracking();setStatus(`YouTube lỗi ${e.data}`,'bad');resumeBtn.hidden=false;}
       }
     });
   };
@@ -202,6 +251,7 @@
     if(document.visibilityState==='visible'){clearTimeout(pollTimer);poll();}
   });
   window.addEventListener('online',()=>{clearTimeout(pollTimer);poll();});
+  window.addEventListener('pagehide',()=>stopListenTracking());
 
   if(!/^[A-Za-z0-9_-]{40,160}$/.test(token)){
     setStatus('Thiếu mã Player','bad');

@@ -1,4 +1,4 @@
-// News By Listening v1.11.0 - custom playlists + playback-rate handoff
+// News By Listening v1.12.0 - custom playlists + playback-rate handoff
 // Playback is owned exclusively by playback-engine.js.
 (function(){
   'use strict';
@@ -146,8 +146,14 @@
   }
 
   function showRenameQueue(q){
-    const root=modal(`<h2>Đổi tên danh sách</h2><div class="field"><label>Tên</label><input id="qp-name" class="input" value="${esc(q.name)}"></div><div class="modal-actions"><button class="ghost" data-close>Hủy</button><button class="primary" data-save>Lưu</button></div>`);
+    const root=modal(`<h2>Sửa danh sách</h2><div class="field"><label>Tên</label><input id="qp-name" class="input" value="${esc(q.name)}"></div><div class="modal-actions nbl-modal-actions-split"><button class="danger" data-delete>Xóa danh sách</button><span class="nbl-modal-spacer"></span><button class="ghost" data-close>Hủy</button><button class="primary" data-save>Lưu</button></div>`);
     root.querySelector('[data-close]').onclick=()=>root.remove();
+    root.querySelector('[data-delete]').onclick=()=>{
+      if(!confirm(`Xóa danh sách “${q.name}”? Video gốc trên YouTube không bị ảnh hưởng.`))return;
+      state.customPlaylists=state.customPlaylists.filter(x=>x.id!==q.id);
+      if(view.queueId===q.id)view.queueId=null;
+      save();root.remove();render();toast('Đã xóa danh sách');
+    };
     root.querySelector('[data-save]').onclick=()=>{
       q.name=root.querySelector('#qp-name').value.trim()||q.name;
       q.updatedAt=new Date().toISOString();save();root.remove();render();
@@ -199,7 +205,7 @@
     const statusText=typeof nblYoutubeBackendStatus==='undefined'||nblYoutubeBackendStatus===null?'Đang kiểm tra...':nblYoutubeBackendStatus?'Đã cấu hình · sẵn sàng':'Chưa sẵn sàng';
     const statusClass=typeof nblYoutubeBackendStatus!=='undefined'&&nblYoutubeBackendStatus?'green':'';
     if(typeof nblYoutubeBackendStatus!=='undefined'&&nblYoutubeBackendStatus===null&&!nblYoutubeStatusBusy)setTimeout(()=>nblCheckYoutubeBackendStatus(),0);
-    return shell(`<div class="section-title"><div><h2>Cài đặt</h2><div class="subtle">Vivaldi là trình duyệt phát mặc định</div></div></div><div class="card form"><div class="field"><label>Trình duyệt phát</label><div><span class="badge green">Vivaldi</span></div><small class="subtle">Playback Engine bàn giao URL sang Vivaldi; queue/repeat/shuffle không còn nằm rải rác ở nhiều module.</small></div><div class="notice"><b>Cấu hình Vivaldi một lần:</b><br>1) iPhone Settings → Apps → Default Apps → Browser App → Vivaldi.<br>2) Vivaldi → Settings → General → Allow media playback in background = ON.<br>3) Vivaldi → Settings → Privacy and security → Don't open links in external apps = ON.</div><button class="ghost" data-q-action="test-vivaldi">Mở thử YouTube bằng Vivaldi</button><div class="hr"></div><div class="field"><label>YouTube Data API</label><div><span class="badge ${statusClass}">${esc(statusText)}</span></div><small class="subtle">API key nằm ở backend Supabase; PC/iPhone không giữ key.</small></div><button class="ghost" data-action="check-youtube-backend">Kiểm tra lại backend</button><div class="hr"></div><div class="field"><label>Tốc độ nghe ưa thích</label><div class="speedrow">${SPEEDS.map(x=>`<button class="chip ${state.prefs.speed===x?'active':''}" data-speed="${x}">${x}x</button>`).join('')}</div></div><label><input id="remember-speed" type="checkbox" ${state.prefs.rememberSpeed?'checked':''}> Ghi nhớ tốc độ gần nhất đã chọn</label><div class="notice"><b>Tốc độ sẽ được bàn giao cho NBL Player.</b> Khi bấm phát video/danh sách, Player tự áp ${state.prefs.speed}x cho YouTube và giữ tốc độ đó khi chuyển bài. Nếu hệ thống phải fallback mở trang YouTube trực tiếp thì trình duyệt/YouTube có thể không nhận tốc độ.</div><div class="hr"></div><div class="subtle">Phiên bản 1.11.0 · Playback Rate Handoff</div></div>`);
+    return shell(`<div class="section-title"><div><h2>Cài đặt</h2><div class="subtle">Vivaldi là trình duyệt phát mặc định</div></div></div><div class="card form"><div class="field"><label>Trình duyệt phát</label><div><span class="badge green">Vivaldi</span></div><small class="subtle">Playback Engine bàn giao URL sang Vivaldi; queue/repeat/shuffle không còn nằm rải rác ở nhiều module.</small></div><div class="notice"><b>Cấu hình Vivaldi một lần:</b><br>1) iPhone Settings → Apps → Default Apps → Browser App → Vivaldi.<br>2) Vivaldi → Settings → General → Allow media playback in background = ON.<br>3) Vivaldi → Settings → Privacy and security → Don't open links in external apps = ON.</div><button class="ghost" data-q-action="test-vivaldi">Mở thử YouTube bằng Vivaldi</button><div class="hr"></div><div class="field"><label>YouTube Data API</label><div><span class="badge ${statusClass}">${esc(statusText)}</span></div><small class="subtle">API key nằm ở backend Supabase; PC/iPhone không giữ key.</small></div><button class="ghost" data-action="check-youtube-backend">Kiểm tra lại backend</button><div class="hr"></div><div class="field"><label>Tốc độ nghe ưa thích</label><div class="speedrow">${SPEEDS.map(x=>`<button class="chip ${state.prefs.speed===x?'active':''}" data-speed="${x}">${x}x</button>`).join('')}</div></div><label><input id="remember-speed" type="checkbox" ${state.prefs.rememberSpeed?'checked':''}> Ghi nhớ tốc độ gần nhất đã chọn</label><div class="notice"><b>Tốc độ sẽ được bàn giao cho NBL Player.</b> Khi bấm phát video/danh sách, Player tự áp ${state.prefs.speed}x cho YouTube và giữ tốc độ đó khi chuyển bài. Nếu hệ thống phải fallback mở trang YouTube trực tiếp thì trình duyệt/YouTube có thể không nhận tốc độ.</div><div class="hr"></div><div class="subtle">Phiên bản 1.12.0 · Listen Status</div></div>`);
   };
 
   if(typeof render==='function'){

@@ -1,8 +1,9 @@
-// News By Listening v1.13.0 - persistent player + resume position
+// News By Listening v1.13.2 - persistent player + cross-browser progress
 (function(){
   'use strict';
 
   const RELAY='https://qjpcxhackvoewcxlatis.supabase.co/functions/v1/nbl-player-relay';
+  const PLAYER_VERSION='1.13.2';
   const params=new URLSearchParams(location.hash.replace(/^#/,''));
   const token=params.get('t')||'';
   const statusEl=document.getElementById('relay-status');
@@ -22,6 +23,7 @@
   let listenTimer=null;
   let trackedVideoId='';
   let remoteProgressBusy=false;
+  let remoteProgressPending=null;
 
   function setStatus(text,kind=''){
     statusEl.textContent=text;
@@ -46,7 +48,7 @@
   }
 
   async function ack(commandId){
-    try{await relay('ack',{commandId});}
+    try{await relay('ack',{commandId,playerVersion:PLAYER_VERSION});}
     catch(e){console.warn('[NBL Player] ACK failed',e);}
   }
 
@@ -97,7 +99,7 @@
   function playbackStatusText(){
     let actual=desiredPlaybackRate;
     try{actual=Number(ytPlayer?.getPlaybackRate?.()||desiredPlaybackRate)||desiredPlaybackRate;}catch{}
-    return `Đang phát · ${actual}x · 1 tab`;
+    return `Đang phát · ${actual}x · 1 tab · v${PLAYER_VERSION}`;
   }
 
   function playbackSnapshot(){
@@ -118,19 +120,26 @@
   }
 
   function pushRemoteProgress(progress){
-    if(remoteProgressBusy||!progress?.videoId)return;
+    if(!progress?.videoId)return;
+    if(remoteProgressBusy){remoteProgressPending=progress;return;}
     remoteProgressBusy=true;
-    relay('progress',{progress}).catch(e=>console.warn('[NBL Player] progress relay failed',e)).finally(()=>{remoteProgressBusy=false;});
+    relay('progress',{progress,playerVersion:PLAYER_VERSION})
+      .catch(e=>console.warn('[NBL Player] progress relay failed',e))
+      .finally(()=>{
+        remoteProgressBusy=false;
+        const pending=remoteProgressPending;remoteProgressPending=null;
+        if(pending)pushRemoteProgress(pending);
+      });
   }
 
   function pushListenProgress({ended=false}={}){
+    if(!ytPlayer||!ytReady)return;
     const tracker=window.NBL_LISTEN_STATUS;
-    if(!tracker||!ytPlayer||!ytReady)return;
     const snap=playbackSnapshot();
     const videoId=ended?(trackedVideoId||snap.videoId):snap.videoId;
     if(!videoId)return;
     if(!ended)trackedVideoId=videoId;
-    tracker.markPlayback(videoId,snap.currentTime,snap.duration,{ended});
+    try{tracker?.markPlayback?.(videoId,snap.currentTime,snap.duration,{ended});}catch{}
     pushRemoteProgress({videoId,position:snap.currentTime,duration:snap.duration,ended});
   }
 
@@ -204,13 +213,15 @@
     if(busy||!token)return;
     busy=true;
     try{
-      const data=await relay('poll');
+      const data=await relay('poll',{playerVersion:PLAYER_VERSION});
       if(data.command?.id&&data.command.id!==lastCommandId){
         applyCommand(data.command);
       }else if(lastCommandId&&data.commandId===lastCommandId&&data.ackId!==lastCommandId&&ytReady){
         ack(lastCommandId);
+      }else if(data.upgradeRequired){
+        setStatus('Player cũ · cần tải lại trang','bad');
       }else if(!data.command){
-        setStatus('Sẵn sàng · chờ News Listening','ok');
+        setStatus(`Sẵn sàng · v${PLAYER_VERSION}`,'ok');
       }
     }catch(e){
       console.warn('[NBL Player] poll failed',e);
@@ -233,7 +244,7 @@
       events:{
         onReady(){
           ytReady=true;
-          setStatus('Player sẵn sàng','ok');
+          setStatus(`Player sẵn sàng · v${PLAYER_VERSION}`,'ok');
           if(pendingCommand)applyCommand(pendingCommand);
           else poll();
         },

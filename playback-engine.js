@@ -1,4 +1,4 @@
-// News By Listening v1.10.0 - ordering, editable titles and single Vivaldi player
+// News By Listening v1.11.0 - playback-rate handoff + reusable single player
 (function(){
   'use strict';
 
@@ -24,6 +24,14 @@
   save();
 
   function normalizeMode(mode){return MODES.has(mode)?mode:'off';}
+  function normalizePlaybackRate(value){
+    const n=Number(value);
+    if(!Number.isFinite(n))return 1;
+    return Math.max(0.25,Math.min(2,n));
+  }
+  function preferredPlaybackRate(){
+    return normalizePlaybackRate(state.prefs?.speed||1);
+  }
   function queueById(id){return (state.customPlaylists||[]).find(x=>x.id===id)||null;}
   function currentQueue(){return queueById(view.queueId);}
   function selectedTrack(queue){return (queue?.videos||[]).find(v=>v.videoId===queue.repeatVideoId)||null;}
@@ -39,7 +47,7 @@
   function isIOSDevice(){
     return /iPad|iPhone|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
   }
-  function singleTabEnabled(){return isIOSDevice()&&state.prefs.singleVivaldiTab!==false;}
+  function singleTabEnabled(){return state.prefs.singleVivaldiTab!==false;}
   function connectionSnapshot(){
     const c=navigator.connection||navigator.mozConnection||navigator.webkitConnection;
     return {online:navigator.onLine,effectiveType:c?.effectiveType||'',downlink:typeof c?.downlink==='number'?c.downlink:null,saveData:!!c?.saveData,visibility:document.visibilityState||'',platform:isIOSDevice()?'iOS':'Other'};
@@ -109,13 +117,28 @@
     window.open(target,'_blank','noopener');updateDiagnostic(diagnosticId,{launchStatus:'new-tab-opened',openedAt:new Date().toISOString()});return true;
   }
 
+  function launchDesktopPlayer(diagnosticId,{reuse=false,fallbackUrl=''}={}){
+    let playerWindow=null;
+    try{
+      playerWindow=window.open(reuse?'':playerPageUrl(),'NBL_PLAYER');
+      playerWindow?.focus?.();
+    }catch{}
+    if(playerWindow){
+      updateDiagnostic(diagnosticId,{launchStatus:reuse?'single-player-reused':'single-player-opened',openedAt:new Date().toISOString()});
+      return true;
+    }
+    updateDiagnostic(diagnosticId,{launchStatus:'single-player-popup-blocked'});
+    return fallbackUrl?directOpenExternal(fallbackUrl,diagnosticId):false;
+  }
+
   async function deliverSingleTab(sequence,meta,diagnosticId,fallbackUrl){
     const ids=(sequence||[]).map(x=>x?.videoId).filter(x=>/^[A-Za-z0-9_-]{11}$/.test(x)).slice(0,QUEUE_LIMIT);
     if(!ids.length)return directOpenExternal(fallbackUrl,diagnosticId);
     if(!singleTabEnabled())return directOpenExternal(fallbackUrl,diagnosticId);
 
-    const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.customTitle||sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,createdAt:new Date().toISOString()};
-    updateDiagnostic(diagnosticId,{deliveryMode:'single-vivaldi-player',playerCommandId:command.id});
+    const playbackRate=preferredPlaybackRate();
+    const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.customTitle||sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,playbackRate,createdAt:new Date().toISOString()};
+    updateDiagnostic(diagnosticId,{deliveryMode:'single-player',playerCommandId:command.id,playbackRate});
 
     let statusBefore=null;
     try{statusBefore=await relay('status');}catch{}
@@ -130,7 +153,8 @@
     save();
 
     if(canReuse){
-      return launchIOS('vivaldi://',diagnosticId,{requestStatus:'single-player-reuse-requested',handoffStatus:'single-player-reused',fallbackUrl:playerPageUrl()});
+      if(isIOSDevice())return launchIOS('vivaldi://',diagnosticId,{requestStatus:'single-player-reuse-requested',handoffStatus:'single-player-reused',fallbackUrl:playerPageUrl()});
+      return launchDesktopPlayer(diagnosticId,{reuse:true,fallbackUrl});
     }
 
     updateDiagnostic(diagnosticId,{
@@ -138,7 +162,8 @@
       previousPlayerSeenAt:statusBefore?.playerSeenAt||'',
       previousAckId:statusBefore?.ackId||''
     });
-    return launchIOS(toVivaldiScheme(playerPageUrl()),diagnosticId,{requestStatus:'single-player-recovery-open',handoffStatus:'single-player-recovery-handoff',fallbackUrl:playerPageUrl()});
+    if(isIOSDevice())return launchIOS(toVivaldiScheme(playerPageUrl()),diagnosticId,{requestStatus:'single-player-recovery-open',handoffStatus:'single-player-recovery-handoff',fallbackUrl:playerPageUrl()});
+    return launchDesktopPlayer(diagnosticId,{reuse:false,fallbackUrl});
   }
 
   function openExternal(url,diagnosticId=null){
@@ -202,7 +227,7 @@
   function setSingleTabEnabled(value){state.prefs.singleVivaldiTab=!!value;save();return state.prefs.singleVivaldiTab;}
   async function resetSingleTabPlayer(){state.prefs.singleVivaldiPlayerInitialized=false;state.prefs.singleVivaldiLastCommandId='';state.prefs.singleVivaldiPlayerVerifiedAt='';save();try{await relay('reset');}catch{}return true;}
   function openSinglePlayer(){
-    if(!isIOSDevice())return window.open(playerPageUrl(),'_blank','noopener');
+    if(!isIOSDevice())return launchDesktopPlayer(null,{reuse:false,fallbackUrl:playerPageUrl()});
     state.prefs.singleVivaldiPlayerInitialized=false;state.prefs.singleVivaldiPlayerVerifiedAt='';save();
     return launchIOS(toVivaldiScheme(playerPageUrl()),null,{requestStatus:'single-player-manual-open',handoffStatus:'single-player-manual-handoff',fallbackUrl:playerPageUrl()});
   }
@@ -216,7 +241,7 @@
     const test=e.target.closest('[data-q-action="test-vivaldi"]');if(test){e.preventDefault();e.stopImmediatePropagation();openSinglePlayer();}
   }
 
-  const api={version:'1.10.0',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,playRandom,playLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
+  const api={version:'1.11.0',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,normalizePlaybackRate,preferredPlaybackRate,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,playRandom,playLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
   window.NBL_PLAYBACK_ENGINE=api;window.NBL_REPEAT_ENGINE=api;openExternal=api.openExternal;watchUrl=api.buildWatchUrl;playVideo=api.playLibraryVideo;
   document.addEventListener('click',handleQueuePlaybackClick,true);
 })();

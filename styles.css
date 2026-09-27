@@ -3,3 +3,14 @@
 @media(max-width:700px){.shell{padding:16px 12px 96px}.topbar{align-items:flex-start}.brand p{display:none}.grid{grid-template-columns:1fr 1fr}.category-card{min-height:110px}.entry{grid-template-columns:50px 1fr}.entry .row-actions{grid-column:1/-1;justify-content:stretch}.entry .row-actions button{flex:1}.video{grid-template-columns:92px 1fr}.video .thumb{width:92px;height:56px}.video .row-actions{grid-column:1/-1;justify-content:stretch}.video .row-actions button{flex:1}.split{grid-template-columns:1fr}.bottomnav{bottom:max(8px,env(safe-area-inset-bottom))}}
 
 .nbl-click-row{cursor:pointer}.nbl-click-row:focus-visible{outline:2px solid var(--green);outline-offset:2px}.nbl-click-row:active{transform:translateY(0);border-color:#4e7869}
+
+
+/* v1.12 - listen status tags */
+.nbl-listen-tag{display:inline-flex;align-items:center;justify-content:center;gap:4px;width:max-content;max-width:100%;margin-top:7px;padding:5px 9px;border-radius:999px;border:1px solid #3a4554;background:#202630;color:#b8c1cf;font-size:11px;font-weight:800;line-height:1;cursor:pointer;white-space:nowrap;transition:.16s transform,.16s background,.16s border-color}
+.nbl-listen-tag:hover{transform:translateY(-1px)}
+.nbl-listen-tag.is-none{background:#20242b;border-color:#3a414b;color:#aeb6c1}
+.nbl-listen-tag.is-listening{background:#102b22;border-color:#2c745c;color:#9ff4d2}
+.nbl-listen-tag.is-done{background:#35181e;border-color:#87404d;color:#ffadb8}
+.nbl-modal-actions-split{align-items:center}
+.nbl-modal-actions-split .nbl-modal-spacer{flex:1}
+@media(max-width:700px){.nbl-listen-tag{font-size:9.5px;padding:4px 6px;margin-top:5px}.nbl-modal-actions-split{flex-wrap:wrap}.nbl-modal-actions-split .nbl-modal-spacer{display:none}.nbl-modal-actions-split button{flex:1}}

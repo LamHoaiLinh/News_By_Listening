@@ -1,5 +1,5 @@
-const CACHE='nbl-v1.12.0-listen-status-r2';
-const ASSETS=['./','./index.html','./styles.css','./v13.css','./v14.css','./v15.css','./v16.css','./v18.css','./v18-mobile-hotfix.css','./v19-library-grid.css','./slots-bootstrap.js','./app.js','./hotfix.js','./sync-v2.js','./youtube-backend.js','./router-core.js','./playback-safety.js','./playback-engine.js','./playlists-ui-v2.js','./listen-status.js','./slots-ui.js','./repeat-ui.js','./new-video-scanner.js','./bulk-refresh-v2.js','./playback-diagnostics-ui.js','./player.html','./player.css','./player.js','./manifest.webmanifest','./icon.svg'];
+const CACHE='nbl-v1.12.1-status-slots';
+const ASSETS=['./','./index.html','./styles.css','./v13.css','./v14.css','./v15.css','./v16.css','./v18.css','./v18-mobile-hotfix.css','./v19-library-grid.css','./v20-listen-slots.css','./slots-bootstrap.js','./app.js','./hotfix.js','./sync-v2.js','./youtube-backend.js','./router-core.js','./playback-safety.js','./playback-engine.js','./playlists-ui-v2.js','./listen-status.js','./slots-ui.js','./repeat-ui.js','./new-video-scanner.js','./bulk-refresh-v2.js','./playback-diagnostics-ui.js','./player.html','./player.css','./player.js','./manifest.webmanifest','./icon.svg'];
 
 self.addEventListener('install',e=>e.waitUntil(
   caches.open(CACHE).then(c=>c.addAll(ASSETS)).then(()=>self.skipWaiting())

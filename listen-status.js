@@ -135,9 +135,11 @@
   function applyTag(button,status){
     if(!button)return;
     const s=normalizeStatus(status);
-    button.className=tagClass(s);
+    const cls=tagClass(s);
+    const text=s==='none'?`○ ${label(s)}`:`● ${label(s)}`;
+    if(button.className!==cls)button.className=cls;
     button.dataset.nblListenCurrent=s;
-    button.textContent=s==='none'?`○ ${label(s)}`:`● ${label(s)}`;
+    if(button.textContent!==text)button.textContent=text;
     button.title='Nhấp để đổi: Chưa nghe → Đang nghe → Đã xong → Chưa nghe';
   }
   function makeTag(attrs,status){

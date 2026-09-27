@@ -212,17 +212,26 @@
       }
       resumeBtn.dataset.index=String(index);
       resumeBtn.dataset.startSeconds=String(Math.floor(info.position));
-      resumeBtn.textContent=`▶ Tiếp tục ${formatClock(info.position)}`;
-      resumeBtn.title=`Tiếp tục từ vị trí đã lưu: ${formatClock(info.position)}`;
-      baseButton.textContent='↺ Nghe lại từ đầu';
-      baseButton.classList.remove('primary');
-      baseButton.classList.add('ghost','nbl-restart-btn');
+      const resumeText=`▶ Tiếp tục ${formatClock(info.position)}`;
+      const resumeTitle=`Tiếp tục từ vị trí đã lưu: ${formatClock(info.position)}`;
+      if(resumeBtn.textContent!==resumeText)resumeBtn.textContent=resumeText;
+      if(resumeBtn.title!==resumeTitle)resumeBtn.title=resumeTitle;
+      if(baseButton.textContent!=='↺ Nghe lại từ đầu')baseButton.textContent='↺ Nghe lại từ đầu';
+      if(baseButton.classList.contains('primary'))baseButton.classList.remove('primary');
+      if(!baseButton.classList.contains('ghost'))baseButton.classList.add('ghost');
+      if(!baseButton.classList.contains('nbl-restart-btn'))baseButton.classList.add('nbl-restart-btn');
     }else{
       if(resumeBtn)resumeBtn.remove();
-      baseButton.textContent=info.status==='done'?'↺ Nghe lại từ đầu':'▶ Nghe từ đây';
-      baseButton.classList.remove('nbl-restart-btn');
-      baseButton.classList.toggle('primary',info.status!=='done');
-      baseButton.classList.toggle('ghost',info.status==='done');
+      const baseText=info.status==='done'?'↺ Nghe lại từ đầu':'▶ Nghe từ đây';
+      if(baseButton.textContent!==baseText)baseButton.textContent=baseText;
+      if(baseButton.classList.contains('nbl-restart-btn'))baseButton.classList.remove('nbl-restart-btn');
+      if(info.status!=='done'){
+        if(!baseButton.classList.contains('primary'))baseButton.classList.add('primary');
+        if(baseButton.classList.contains('ghost'))baseButton.classList.remove('ghost');
+      }else{
+        if(baseButton.classList.contains('primary'))baseButton.classList.remove('primary');
+        if(!baseButton.classList.contains('ghost'))baseButton.classList.add('ghost');
+      }
     }
   }
 

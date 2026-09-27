@@ -3,6 +3,7 @@
   'use strict';
 
   const BASE_KEY='nbl_listen_status_v1';
+  const RELAY_URL='https://qjpcxhackvoewcxlatis.supabase.co/functions/v1/nbl-player-relay';
   const activeSlot=()=>window.NBL_SLOTS?.active?.()||1;
   const KEY=activeSlot()===1?BASE_KEY:`${BASE_KEY}_slot_${activeSlot()}`;
   const STATUSES=['none','listening','done'];
@@ -127,6 +128,52 @@
     return bucket[key].status;
   }
   function cycleGroupStatus(kind,id,videos){return setGroupStatus(kind,id,nextStatus(groupStatus(kind,id,videos)));}
+
+  function mergeRemoteProgress(progressMap){
+    if(!progressMap||typeof progressMap!=='object')return false;
+    const data=load();
+    let changed=false;
+    for(const [videoId,raw] of Object.entries(progressMap)){
+      if(!/^[A-Za-z0-9_-]{11}$/.test(String(videoId)))continue;
+      const remoteAt=Date.parse(String(raw?.updatedAt||''));
+      const prev=normalizeRecord(data.videos[String(videoId)])||{};
+      const localAt=Date.parse(String(prev.positionUpdatedAt||''));
+      if(Number.isFinite(localAt)&&Number.isFinite(remoteAt)&&localAt>remoteAt)continue;
+      const position=Math.max(0,Number(raw?.position)||0),duration=Math.max(0,Number(raw?.duration)||0);
+      const oldStatus=normalizeStatus(prev.status);
+      const manual=String(prev.source||'')==='manual';
+      const ratio=duration>0?Math.max(0,Math.min(1,position/duration)):0;
+      let status=oldStatus;
+      if(!manual){
+        if(raw?.ended||ratio>=AUTO_DONE_AT_RATIO)status='done';
+        else if(ratio>=AUTO_LISTENING_AT_RATIO)status='listening';
+      }
+      data.videos[String(videoId)]={
+        ...prev,
+        status,
+        statusUpdatedAt:status!==oldStatus?String(raw?.updatedAt||nowIso()):String(prev.statusUpdatedAt||''),
+        position,
+        duration:duration||Number(prev.duration)||0,
+        positionUpdatedAt:String(raw?.updatedAt||nowIso()),
+        source:manual?'manual':(status!==oldStatus?'auto':String(prev.source||''))
+      };
+      changed=true;
+    }
+    if(changed)save(data);
+    return changed;
+  }
+
+  async function pullRemoteProgress(){
+    try{
+      if(typeof state==='undefined')return false;
+      const token=String(state?.prefs?.singleVivaldiPlayerToken||'');
+      if(!/^[A-Za-z0-9_-]{40,160}$/.test(token))return false;
+      const r=await fetch(RELAY_URL,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'status',token}),cache:'no-store'});
+      const result=await r.json().catch(()=>({}));
+      if(!r.ok||!result?.ok)return false;
+      return mergeRemoteProgress(result.progress||{});
+    }catch{return false;}
+  }
 
   function exportData(){return load();}
   function importData(value){
@@ -314,10 +361,10 @@
   }
 
   window.NBL_LISTEN_STATUS={
-    version:'1.13.0',KEY,AUTO_LISTENING_AT_RATIO,AUTO_DONE_AT_RATIO,
+    version:'1.13.1',KEY,AUTO_LISTENING_AT_RATIO,AUTO_DONE_AT_RATIO,
     videoRecord,videoStatus,setVideoStatus,cycleVideoStatus,markPlayback,resumeInfo,formatClock,
     derivedStatus,groupStatus,setGroupStatus,cycleGroupStatus,
-    exportData,importData,enhance,refreshTags
+    mergeRemoteProgress,pullRemoteProgress,exportData,importData,enhance,refreshTags
   };
 
   if(typeof syncPayload==='function'){
@@ -392,11 +439,14 @@
 
   window.addEventListener('storage',e=>{if(e.key===KEY)setTimeout(()=>{enhance();refreshTags();},0);});
   window.addEventListener('nbl:listen-status-change',()=>setTimeout(()=>{enhance();refreshTags();},0));
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')pullRemoteProgress().then(()=>enhance());});
 
   if(document.getElementById('app')){
     let scheduled=false;
     const schedule=()=>{if(scheduled)return;scheduled=true;setTimeout(()=>{scheduled=false;enhance();},0);};
     new MutationObserver(schedule).observe(document.getElementById('app'),{childList:true,subtree:true});
     schedule();
+    setTimeout(()=>pullRemoteProgress().then(()=>enhance()),800);
+    setInterval(()=>{if(document.visibilityState==='visible')pullRemoteProgress().then(changed=>{if(changed)enhance();});},5000);
   }
 })();

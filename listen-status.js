@@ -2,9 +2,12 @@
 (function(){
   'use strict';
 
-  const KEY='nbl_listen_status_v1';
+  const BASE_KEY='nbl_listen_status_v1';
+  const activeSlot=()=>window.NBL_SLOTS?.active?.()||1;
+  const KEY=activeSlot()===1?BASE_KEY:`${BASE_KEY}_slot_${activeSlot()}`;
   const STATUSES=['none','listening','done'];
-  const AUTO_LISTENING_AT_SECONDS=10*60;
+  const AUTO_LISTENING_AT_RATIO=0.05;
+  const AUTO_DONE_AT_RATIO=0.95;
   const LABELS={none:'Chưa nghe',listening:'Đang nghe',done:'Đã xong'};
 
   function blank(){return {v:1,videos:{},items:{},queues:{}};}
@@ -68,9 +71,13 @@
     const data=load(),id=String(videoId),prev=normalizeRecord(data.videos[id])||{};
     const position=Math.max(0,Number(currentTime)||0),total=Math.max(0,Number(duration)||0);
     const oldStatus=normalizeStatus(prev.status);
+    const manual=String(prev.source||'')==='manual';
+    const ratio=total>0?Math.max(0,Math.min(1,position/total)):0;
     let status=oldStatus;
-    if(ended)status='done';
-    else if(oldStatus==='none'&&position>=AUTO_LISTENING_AT_SECONDS)status='listening';
+    if(!manual){
+      if(ended||ratio>=AUTO_DONE_AT_RATIO)status='done';
+      else if(ratio>=AUTO_LISTENING_AT_RATIO)status='listening';
+    }
     const changed=status!==oldStatus;
     data.videos[id]={
       ...prev,
@@ -79,7 +86,7 @@
       position,
       duration:total||Number(prev.duration)||0,
       positionUpdatedAt:nowIso(),
-      source:changed?'auto':String(prev.source||'')
+      source:manual?'manual':(changed?'auto':String(prev.source||''))
     };
     save(data);
     return status;
@@ -232,7 +239,7 @@
   }
 
   window.NBL_LISTEN_STATUS={
-    version:'1.12.0',KEY,AUTO_LISTENING_AT_SECONDS,
+    version:'1.12.1',KEY,AUTO_LISTENING_AT_RATIO,AUTO_DONE_AT_RATIO,
     videoRecord,videoStatus,setVideoStatus,cycleVideoStatus,markPlayback,
     derivedStatus,groupStatus,setGroupStatus,cycleGroupStatus,
     exportData,importData,enhance,refreshTags

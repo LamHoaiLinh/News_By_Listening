@@ -1,4 +1,4 @@
-// News By Listening v1.11.0 - playback-rate handoff + reusable single player
+// News By Listening v1.13.0 - playback-rate handoff + resume position
 (function(){
   'use strict';
 
@@ -137,8 +137,9 @@
     if(!singleTabEnabled())return directOpenExternal(fallbackUrl,diagnosticId);
 
     const playbackRate=preferredPlaybackRate();
-    const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.customTitle||sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,playbackRate,createdAt:new Date().toISOString()};
-    updateDiagnostic(diagnosticId,{deliveryMode:'single-player',playerCommandId:command.id,playbackRate});
+    const startSeconds=Math.max(0,Number(meta?.startSeconds)||0);
+    const command={id:uid('pcmd'),videoIds:ids,title:sequence?.[0]?.customTitle||sequence?.[0]?.title||meta?.title||'',sourceName:meta?.sourceName||'',repeatMode:normalizeMode(meta?.repeatMode),shuffle:!!meta?.shuffle,playbackRate,startSeconds,createdAt:new Date().toISOString()};
+    updateDiagnostic(diagnosticId,{deliveryMode:'single-player',playerCommandId:command.id,playbackRate,startSeconds});
 
     let statusBefore=null;
     try{statusBefore=await relay('status');}catch{}
@@ -202,27 +203,30 @@
   function queueUrl(sequence){const ids=(sequence||[]).map(x=>x?.videoId).filter(Boolean).slice(0,QUEUE_LIMIT);return ids.length?`https://www.youtube.com/watch_videos?video_ids=${ids.map(encodeURIComponent).join(',')}`:'';}
   function recordQueueHistory(queue,sequence,url){const first=sequence?.[0];if(!first||typeof recordHistory!=='function')return;recordHistory({videoId:first.videoId,title:first.customTitle||first.title,channelTitle:first.channelTitle,thumbnail:first.thumbnail},{title:queue?.name||'Danh sách phát'},url);}
 
-  function playQueue(queue,{start=0,shuffle=false,honorRepeat=true,quiet=false}={}){
+  function playQueue(queue,{start=0,shuffle=false,honorRepeat=true,quiet=false,startSeconds=0}={}){
     if(!queue)return false;const mode=honorRepeat?normalizeMode(queue.repeatMode):'off';
     if((mode==='track-once'||mode==='track-infinity')&&!selectedTrack(queue)){toast('Hãy chọn một bài trong danh sách để lặp');return false;}
     const sequence=buildSequence(queue,{start,shuffle,honorRepeat});if(!sequence.length){toast('Danh sách chưa có video');return false;}
     const url=queueUrl(sequence);if(!url){toast('Không tạo được hàng đợi');return false;}recordQueueHistory(queue,sequence,url);
     const first=sequence[0];const diagnosticId=createDiagnostic({action:start>0?'queue-from-here':'queue-play',sourceType:'custom-playlist',sourceName:queue.name||'Danh sách phát',startIndex:Number(start)||0,shuffle,repeatMode:mode,queueCount:sequence.length,firstVideoId:first?.videoId||'',firstTitle:first?.customTitle||first?.title||'',videoIds:sequence.map(x=>x?.videoId).filter(Boolean),url});
     if(!quiet){const repeatSuffix=mode==='off'?'':` · Lặp ${modeLabel(queue)}`;const fromSuffix=start>0?` · từ #${Number(start)+1}`:'';toast(`${shuffle?'Đã trộn':'Đã tạo'} ${sequence.length} mục${fromSuffix}${repeatSuffix}`);}
-    return deliverSingleTab(sequence,{sourceName:queue.name||'Danh sách phát',repeatMode:mode,shuffle},diagnosticId,url);
+    return deliverSingleTab(sequence,{sourceName:queue.name||'Danh sách phát',repeatMode:mode,shuffle,startSeconds:Math.max(0,Number(startSeconds)||0)},diagnosticId,url);
   }
-  function playFromIndex(queue,index){return playQueue(queue,{start:Number(index)||0,shuffle:false,honorRepeat:false});}
+  function playFromIndex(queue,index,startSeconds=0){return playQueue(queue,{start:Number(index)||0,shuffle:false,honorRepeat:false,startSeconds});}
+  function resumeQueueFromIndex(queue,index,startSeconds){return playFromIndex(queue,index,Math.max(0,Number(startSeconds)||0));}
   function playRandom(queue){return playQueue(queue,{start:0,shuffle:true,honorRepeat:true});}
 
-  function playLibraryVideo(item,video,index){
+  function playLibraryVideo(item,video,index,options={}){
     if(!item||!video)return false;
+    const startSeconds=Math.max(0,Number(options?.startSeconds)||0);
     const idx=Math.max(0,Number(index)||0);let sequence=(item.videos||[]).slice(idx,idx+QUEUE_LIMIT).filter(x=>x?.videoId);
     if(!sequence.length||sequence[0]?.videoId!==video.videoId)sequence=[video];
     const url=queueUrl(sequence)||buildWatchUrl(item,video,index);
     if(typeof recordHistory==='function')recordHistory(video,item,url);
     const diagnosticId=createDiagnostic({action:'library-video',sourceType:item.kind||'library',sourceName:item.title||video.channelTitle||'Thư viện',startIndex:idx,shuffle:false,repeatMode:'off',queueCount:sequence.length,firstVideoId:video.videoId||'',firstTitle:video.title||'',videoIds:sequence.map(x=>x.videoId).filter(Boolean),url});
-    return deliverSingleTab(sequence,{sourceName:item.title||video.channelTitle||'Thư viện',repeatMode:'off',shuffle:false},diagnosticId,url);
+    return deliverSingleTab(sequence,{sourceName:item.title||video.channelTitle||'Thư viện',repeatMode:'off',shuffle:false,startSeconds},diagnosticId,url);
   }
+  function resumeLibraryVideo(item,video,index,startSeconds){return playLibraryVideo(item,video,index,{startSeconds:Math.max(0,Number(startSeconds)||0)});}
 
   function setSingleTabEnabled(value){state.prefs.singleVivaldiTab=!!value;save();return state.prefs.singleVivaldiTab;}
   async function resetSingleTabPlayer(){state.prefs.singleVivaldiPlayerInitialized=false;state.prefs.singleVivaldiLastCommandId='';state.prefs.singleVivaldiPlayerVerifiedAt='';save();try{await relay('reset');}catch{}return true;}
@@ -241,7 +245,7 @@
     const test=e.target.closest('[data-q-action="test-vivaldi"]');if(test){e.preventDefault();e.stopImmediatePropagation();openSinglePlayer();}
   }
 
-  const api={version:'1.11.0',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,normalizePlaybackRate,preferredPlaybackRate,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,playRandom,playLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
+  const api={version:'1.13.0',QUEUE_LIMIT,DIAGNOSTIC_LIMIT,normalizeMode,normalizePlaybackRate,preferredPlaybackRate,queueById,currentQueue,selectedTrack,modeLabel,buildWatchUrl,buildSequence,queueUrl,openExternal,playQueue,playFromIndex,resumeQueueFromIndex,playRandom,playLibraryVideo,resumeLibraryVideo,diagnostics,createDiagnostic,updateDiagnostic,clearDiagnostics,singleTabEnabled,setSingleTabEnabled,resetSingleTabPlayer,openSinglePlayer,playerPageUrl};
   window.NBL_PLAYBACK_ENGINE=api;window.NBL_REPEAT_ENGINE=api;openExternal=api.openExternal;watchUrl=api.buildWatchUrl;playVideo=api.playLibraryVideo;
   document.addEventListener('click',handleQueuePlaybackClick,true);
 })();
